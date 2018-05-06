@@ -13,8 +13,8 @@ class DBLogger:
                 self.conn = psycopg2.connect(self.db_url)
                 cur = self.conn.cursor()
                 cur.execute("CREATE TABLE IF NOT EXISTS dialog(chat_id varchar, user_name varchar, query varchar, response varchar, actualtime timestamp)")
-                conn.commit()
-            except OperationalError:
+                self.conn.commit()
+            except Exception:
                 self.conn = None
         return self.conn
 

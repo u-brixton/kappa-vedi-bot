@@ -1,6 +1,6 @@
 import telebot
 import os
-from heroku_logging import DBLogger
+from utils.heroku_logging import DBLogger
 
 TOKEN = os.environ['TOKEN']
 bot = telebot.TeleBot(TOKEN)
