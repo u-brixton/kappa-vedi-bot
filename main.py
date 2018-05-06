@@ -1,6 +1,7 @@
 import telebot
 import os
 from utils.database import DBConnector, DBLogger, GroupManager
+from workflow import SessionManager
 
 TOKEN = os.environ['TOKEN']
 bot = telebot.TeleBot(TOKEN)
@@ -8,6 +9,7 @@ bot = telebot.TeleBot(TOKEN)
 connector = DBConnector(os.environ['DATABASE_URL'])
 dblogger = DBLogger(connector)
 group_manager = GroupManager(connector)
+session_manager = SessionManager(connector)
 
 HELP_MSG = """Я бот Каппа Веди, буду тебе рассказывать о предстоящих мероприятиях Клуба и держать в курсе прочих новостей.
 Список команд:
@@ -35,17 +37,21 @@ def admins_only(handler_function):
         else:
             bot.reply_to(message, "Привет! Я чатбот Каппа Веди. Вы просите меня совершить админское действие, но вы делаете это без админских прав.")
     return wrapper
+    
+def answer_with_log(message, response):
+    dblogger.log_message(message, response)
+    bot.reply_to(message, response)
 
 @bot.message_handler(commands=['start', 'help'])
 @authorized_only
 def send_welcome(message):
-	bot.reply_to(message, HELP_MSG)
+    answer_with_log(message, HELP_MSG)
 
 @bot.message_handler(func=lambda message: True)
 @authorized_only
 def echo_all(message):
-    response = "Если вы есть – будьте первыми!"
-    dblogger.log_message(message, response)
-    bot.reply_to(message, response)
+    response = session_manager.process_message(message) or "Если вы есть – будьте первыми!"
+    answer_with_log(message, response)
+    
 
 bot.polling()
