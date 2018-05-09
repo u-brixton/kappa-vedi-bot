@@ -3,6 +3,7 @@ import os
 from utils.database import DBConnector, DBLogger, GroupManager, EventManager
 from workflow import SessionManager
 from flask import Flask, request
+from utils.telegram_api import surrogate_message
 
 TOKEN = os.environ['TOKEN']
 bot = telebot.TeleBot(TOKEN)
@@ -97,6 +98,15 @@ def webhook():
     bot.remove_webhook()
     bot.set_webhook(url=BASE_URL + TELEBOT_URL + TOKEN)
     return "!", 200
+
+
+@server.route("/wakeup/")
+def wakeup():
+    # todo: check last visit time
+    # todo: perform jobs (e.g. remind about events)
+    # todo: update the visit time
+    answer_with_log(surrogate_message('71034798', 'cointegrated'), "Я жив и напоминаю о себе!", reply=False)
+    pass
 
 
 if __name__ == "__main__":
