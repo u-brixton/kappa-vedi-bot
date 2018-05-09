@@ -1,6 +1,7 @@
 import json
 import copy
 from utils.telegram_api import surrogate_message
+from datetime import datetime
 
 
 def update_dict(base_dict, updates):
@@ -67,18 +68,18 @@ class SessionManager:
                 response = 'Теперь введите краткую программу мероприятия:'
                 new_state = update_dict(state, {'name': 'create_event.program', 'time': text})
             elif state_name == 'create_event.program':
-                response = 'Теперь введите краткую программу мероприятия:'
+                response = 'Теперь введите размер взноса на мероприятие:'
                 new_state = update_dict(state, {'name': 'create_event.cost', 'program': text})
             elif state_name == 'create_event.cost':
                 response = 'Отлично! Сейчас я создам ' + format_event_description(state) \
                            + '\nВведите "да", если действительно хотите его создать и разослать приглашения:'
-                new_state = update_dict(state, {'name': 'create_event.confirm'})
+                new_state = update_dict(state, {'name': 'create_event.confirm', 'cost': text})
             elif state_name == 'create_event.confirm':
                 if text.lower().strip() == 'да':
                     response = 'Отлично! Рассылаю приглашения...'
                     event_id = self.event_manager.add_event(
                         {'place': state['place'],
-                         'time': state['time'],  # todo: convert time to timestamp
+                         'time': datetime.strptime(state['time'], "%d.%m.%Y %H:%M"),
                          'cost': state['cost'],
                          'program': state['program']
                          })
