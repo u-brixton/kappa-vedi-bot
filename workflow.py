@@ -62,7 +62,7 @@ class SessionManager:
                 response = "Отлично, создаём новое мероприятие! Введите место:"
                 new_state = {'name': 'create_event.place'}
             elif state_name == 'create_event.place':
-                response = 'Теперь введите дату и время в формате YYYY.MM.DD HH:MM:'
+                response = 'Теперь введите дату и время в формате DD.MM.YYYY HH:MM (и никак иначе):'
                 new_state = update_dict(state, {'name': 'create_event.time', 'place': text})
             elif state_name == 'create_event.time':
                 response = 'Теперь введите краткую программу мероприятия:'
@@ -71,9 +71,9 @@ class SessionManager:
                 response = 'Теперь введите размер взноса на мероприятие:'
                 new_state = update_dict(state, {'name': 'create_event.cost', 'program': text})
             elif state_name == 'create_event.cost':
-                response = 'Отлично! Сейчас я создам ' + format_event_description(state) \
-                           + '\nВведите "да", если действительно хотите его создать и разослать приглашения:'
                 new_state = update_dict(state, {'name': 'create_event.confirm', 'cost': text})
+                response = 'Отлично! Сейчас я создам ' + format_event_description(new_state) \
+                           + '\nВведите "да", если действительно хотите его создать и разослать приглашения:'
             elif state_name == 'create_event.confirm':
                 if text.lower().strip() == 'да':
                     response = 'Отлично! Рассылаю приглашения...'
