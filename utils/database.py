@@ -65,5 +65,5 @@ class GroupManager:
     
     def update_groups(self):
         # todo: connect to database or Google Sheets
-        self.users = ["cointegrated"]
-        self.admins = ["cointegrated"]
+        self.users = ["cointegrated", "helmeton", "Stepan_Ivanov"]
+        self.admins = ["cointegrated", "helmeton", "Stepan_Ivanov"]

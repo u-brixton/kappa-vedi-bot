@@ -10,7 +10,7 @@ bot = telebot.TeleBot(TOKEN)
 connector = DBConnector(os.environ['DATABASE_URL'])
 dblogger = DBLogger(connector)
 group_manager = GroupManager(connector)
-session_manager = SessionManager(connector)
+session_manager = SessionManager(connector, group_manager=group_manager)
 
 server = Flask(__name__)
 TELEBOT_URL = 'telebot_webhook/'
@@ -26,6 +26,7 @@ HELP_MSG = """
 /return - пока не готово
 /club - пока не готово
 /team - пока не готово
+/reset - прервать текущий диалог с ботом (пока не готово)
 """
 
 
