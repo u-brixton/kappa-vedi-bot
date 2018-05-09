@@ -23,6 +23,22 @@ class DBConnector:
                 self.conn = None
         return self.conn
 
+    def sql_get(self, query):
+        conn = self.get_connection()
+        if conn is not None:
+            cur = conn.cursor()
+            cur.execute(query)
+            result = cur.fetchall()
+            return result
+        return None
+
+    def sql_set(self, query):
+        conn = self.get_connection()
+        if conn is not None:
+            cur = conn.cursor()
+            cur.execute(query)
+            conn.commit()
+
 
 class DBLogger:
     def __init__(self, connector):
@@ -30,18 +46,15 @@ class DBLogger:
         self.connector.add_initial_query("CREATE TABLE IF NOT EXISTS dialog(chat_id varchar, user_name varchar, query varchar, response varchar, actualtime timestamp)")
     
     def log_message(self, message, response=None):
-        conn = self.connector.get_connection()
-        if conn is not None:
-            cur = conn.cursor()
-            query = "INSERT INTO dialog VALUES('{}', '{}', '{}', '{}', TIMESTAMP '{}')".format(
-                message.chat.id, 
-                message.chat.username, 
-                message.text, 
-                response, 
-                datetime.now()
-            )
-            cur.execute(query)
-            conn.commit()
+        query = "INSERT INTO dialog VALUES('{}', '{}', '{}', '{}', TIMESTAMP '{}')".format(
+            message.chat.id,
+            message.chat.username,
+            message.text,
+            response,
+            datetime.now()
+        )
+        self.connector.sql_set(query)
+
 
 class GroupManager:
     def __init__(self, connector):

@@ -1,12 +1,27 @@
+import json
+
+
 class SessionManager:
     def __init__(self, connector):
         self.connector = connector
+        self.connector.add_initial_query(
+            "CREATE TABLE IF NOT EXISTS dialog_states(chat_id VARCHAR PRIMARY KEY, state VARCHAR)")
+
     def get_state(self, chat_id):
-        return dict()
-        # raise NotImplementedError()
+        query = "SELECT state FROM dialog_states WHERE chat_id = '{}'".format(chat_id)
+        results = self.connector.sql_get(query)
+        if results:
+            return json.loads(results[0][0])
         # we need Mongo to manage non-structured sessions
+        # or we can just JSON-encode states and put them into a relational DB!
+        return dict()
+
     def set_state(self, chat_id, state):
-        raise NotImplementedError()
+        values = "('{}', '{}')".format(chat_id, json.dumps(state))
+        q = "INSERT INTO dialog_states VALUES{} ON CONFLICT(chat_id) DO UPDATE SET(chat_id, state)={}".format(
+            values, values)
+        self.connector.sql_set(q)
+
     def process_message(self, message):
         state = self.get_state(message.chat.id)
         state_name = state.get('name')
