@@ -104,7 +104,7 @@ class EventManager:
             event['program'],
             event['cost'],
         )
-        results = self.connector.sql_get_set(query)
+        results = self.connector.sql_set_get(query)
         if results:
             return results[0][0]
         return None
