@@ -39,6 +39,16 @@ class DBConnector:
             cur.execute(query)
             conn.commit()
 
+    def sql_set_get(self, query):
+        conn = self.get_connection()
+        if conn is not None:
+            cur = conn.cursor()
+            cur.execute(query)
+            conn.commit()
+            result = cur.fetchall()
+            return result
+        return None
+
 
 class DBLogger:
     def __init__(self, connector):
@@ -81,19 +91,20 @@ class EventManager:
     def __init__(self, connector):
         self.connector = connector
         self.connector.add_initial_query(
-            "CREATE TABLE IF NOT EXISTS club_event (place VARCHAR , planned_time TIMESTAMP , program VARCHAR , cost VARCHAR )")
+            "CREATE TABLE IF NOT EXISTS club_event (event_id SERIAL PRIMARY KEY, place VARCHAR , planned_time TIMESTAMP , program VARCHAR , cost VARCHAR )")
         self.update_events()
 
     def update_events(self):
         pass
 
     def add_event(self, event):
-        # todo: support event ids
-        query = "INSERT INTO club_event VALUES('{}', '{}', '{}', '{}', TIMESTAMP '{}')".format(
+        query = "INSERT INTO club_event(place, planned_time, program, cost) VALUES('{}', '{}', '{}', '{}') RETURNING event_id".format(
             event['place'],
             event['time'],
             event['program'],
             event['cost'],
         )
-        self.connector.sql_set(query)
-        return 1
+        results = self.connector.sql_get_set(query)
+        if results:
+            return results[0][0]
+        return None

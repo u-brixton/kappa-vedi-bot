@@ -11,7 +11,7 @@ def update_dict(base_dict, updates):
 
 
 def format_event_description(event_dict):
-    return 'мероприятие по месту {}, в {}, в программе {}, взнос {}'.format(
+    return 'мероприятие:\n\tместо:\t{},\n\tвремя:\t{},\n\tпрограмма:\t{},\n\tвзнос:\t{}\n'.format(
         event_dict['place'],
         event_dict['time'],  # todo: make sure the datetime renders corrrectly
         event_dict['program'],
@@ -76,13 +76,14 @@ class SessionManager:
                            + '\nВведите "да", если действительно хотите его создать и разослать приглашения:'
             elif state_name == 'create_event.confirm':
                 if text.lower().strip() == 'да':
-                    response = 'Отлично! Рассылаю приглашения...'
                     event_id = self.event_manager.add_event(
                         {'place': state['place'],
                          'time': datetime.strptime(state['time'], "%d.%m.%Y %H:%M"),
                          'cost': state['cost'],
                          'program': state['program']
                          })
+                    # todo: check if event_id is not None
+                    response = 'Отлично! Рассылаю приглашения...'
                     # send invitations
                     invitation = "Готовится мероприятие: " + format_event_description(state) + \
                         "\nВы пойдёте? Ответьте 'да', 'нет', или 'пока не знаю'."
@@ -93,7 +94,7 @@ class SessionManager:
                         if chat_id is None:
                             missing.append(username)
                         else:
-                            self.send_function(surrogate_message(chat_id, username), invitation)
+                            self.send_function(surrogate_message(chat_id, username), invitation, reply=False)
                             self.set_state(chat_id, {'name': 'invite_to_event.confirm', 'event_id': event_id})
                 else:
                     response = 'Ладно, не буду создавать это мероприятие.'
