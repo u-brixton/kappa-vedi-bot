@@ -1,6 +1,6 @@
 import telebot
 import os
-from utils.database import DBConnector, DBLogger, GroupManager
+from utils.database import DBConnector, DBLogger, GroupManager, EventManager
 from workflow import SessionManager
 from flask import Flask, request
 
@@ -10,7 +10,8 @@ bot = telebot.TeleBot(TOKEN)
 connector = DBConnector(os.environ['DATABASE_URL'])
 dblogger = DBLogger(connector)
 group_manager = GroupManager(connector)
-session_manager = SessionManager(connector, group_manager=group_manager)
+event_manager = EventManager(connector)
+session_manager = SessionManager(connector, group_manager=group_manager, event_manager=event_manager)
 
 server = Flask(__name__)
 TELEBOT_URL = 'telebot_webhook/'
@@ -50,9 +51,16 @@ def admins_only(handler_function):
     return wrapper
 
 
-def answer_with_log(message, response):
+def answer_with_log(message, response, reply=True, **kwargs):
     dblogger.log_message(message, response)
-    bot.reply_to(message, response)
+    if reply and message.message_id != 'DUMMY':
+        reply_to_message_id = message.message_id
+    else:
+        reply_to_message_id = None
+    bot.send_message(message.chat.id, response, reply_to_message_id=reply_to_message_id, **kwargs)
+
+
+session_manager.send_function = answer_with_log
 
 
 @bot.message_handler(commands=['start', 'help'])

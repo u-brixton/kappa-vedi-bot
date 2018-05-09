@@ -67,3 +67,33 @@ class GroupManager:
         # todo: connect to database or Google Sheets
         self.users = ["cointegrated", "helmeton", "Stepan_Ivanov"]
         self.admins = ["cointegrated", "helmeton", "Stepan_Ivanov"]
+
+    def get_chat_id_for_users(self, usernames):
+        query = "SELECT DISTINCT user_name, chat_id FROM dialog"
+        results = self.connector.sql_get(query)
+        if results is None:
+            results = []
+        results = dict(results)
+        return [results.get(username) for username in usernames]
+
+
+class EventManager:
+    def __init__(self, connector):
+        self.connector = connector
+        self.connector.add_initial_query(
+            "CREATE TABLE IF NOT EXISTS club_event (place VARCHAR , planned_time TIMESTAMP , program VARCHAR , cost VARCHAR )")
+        self.update_events()
+
+    def update_events(self):
+        pass
+
+    def add_event(self, event):
+        # todo: support event ids
+        query = "INSERT INTO club_event VALUES('{}', '{}', '{}', '{}', TIMESTAMP '{}')".format(
+            event['place'],
+            event['time'],
+            event['program'],
+            event['cost'],
+        )
+        self.connector.sql_set(query)
+        return 1
