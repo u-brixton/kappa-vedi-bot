@@ -86,7 +86,7 @@ class SessionManager:
                     response = 'Отлично! Рассылаю приглашения...'
                     # send invitations
                     invitation = "Готовится мероприятие: " + format_event_description(state) + \
-                        "\nВы пойдёте? Ответьте 'да', 'нет', или 'пока не знаю'."
+                        """\nВы пойдёте? Ответьте "да", "нет", или "пока не знаю"."""
                     users = self.group_manager.users
                     chat_ids = self.group_manager.get_chat_id_for_users(users)
                     missing = []

@@ -63,6 +63,7 @@ class DBLogger:
             response,
             datetime.now()
         )
+        # todo: escape single quotes in text and response
         self.connector.sql_set(query)
 
 
