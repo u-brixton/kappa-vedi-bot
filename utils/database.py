@@ -38,6 +38,7 @@ class DBConnector:
             cur = conn.cursor()
             cur.execute(query)
             conn.commit()
+            # todo: restart connection if there was a failure
 
     def sql_set_get(self, query):
         conn = self.get_connection()
@@ -59,11 +60,11 @@ class DBLogger:
         query = "INSERT INTO dialog VALUES('{}', '{}', '{}', '{}', TIMESTAMP '{}')".format(
             message.chat.id,
             message.chat.username,
-            message.text.replace("'", "\'"),
-            response.replace("'", "\'"),
+            message.text.replace("'", r"\'"),
+            response.replace("'", r"\'"),
             datetime.now()
         )
-        # todo: escape single quotes in text and response
+        # todo: escape single quotes in text and response (still not working!)
         self.connector.sql_set(query)
 
 
