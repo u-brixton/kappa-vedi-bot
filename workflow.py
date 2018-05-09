@@ -48,6 +48,7 @@ class SessionManager:
         state_name = state.get('name')
         response = None
         new_state = None
+        callback = None
 
         # sometimes message text has priority over states
         if text == '/reset':
@@ -83,24 +84,53 @@ class SessionManager:
                          'program': state['program']
                          })
                     # todo: check if event_id is not None
-                    response = 'Отлично! Рассылаю приглашения...'
+                    response = 'Отлично! Подготавливаю приглашения...'
                     # send invitations
-                    invitation = "Готовится мероприятие: " + format_event_description(state) + \
+                    invitation = "Готовится " + format_event_description(state) + \
                         """\nВы пойдёте? Ответьте "да", "нет", или "пока не знаю"."""
                     users = self.group_manager.users
                     chat_ids = self.group_manager.get_chat_id_for_users(users)
                     missing = []
+                    non_missing = []
+                    non_missing_chat_id = []
                     for username, chat_id in zip(users, chat_ids):
                         if chat_id is None:
                             missing.append(username)
                         else:
-                            self.send_function(surrogate_message(chat_id, username), invitation, reply=False)
-                            self.set_state(chat_id, {'name': 'invite_to_event.confirm', 'event_id': event_id})
+                            non_missing.append(username)
+                            non_missing_chat_id.append(chat_id)
+                    response = response + '\nПриглашу: {}\nНет в чате: {}'.format(str(missing), str(non_missing))
+                    # invitations must be set only after this function has finished - make it a callback
+
+                    def callback_tmp():
+                        for t_username, t_chat_id in zip(non_missing, non_missing_chat_id):
+                            self.send_function(surrogate_message(chat_id, t_username), invitation, reply=False)
+                            self.set_state(t_chat_id, {'name': 'invite_to_event.confirm', 'event_id': event_id})
+                    callback = callback_tmp
                 else:
                     response = 'Ладно, не буду создавать это мероприятие.'
                 new_state = {}
             elif state_name == 'invite_to_event.confirm':
-                pass
+                processed = text.lower().strip()
+                answer_code = None
+                if processed == 'да':
+                    response = 'Отлично, ждём вас!'
+                    answer_code = 1
+                    # todo: turn on collector function
+                elif processed == 'нет':
+                    response = 'Очень жаль, что у вас не получится прийти.'
+                    answer_code = 2
+                    # todo: try to collect feedback
+                elif processed in {'пока не знаю', 'не знаю'}:
+                    response = 'Ну я тогда ещё разок позже спрошу.'
+                    answer_code = 3
+                    # todo: solve the ask-later problem
+                else:
+                    response = 'Пожалуйста, ответьте в точности одной из фраз - "да", "нет" или "пока не знаю"'
+                if answer_code is not None:
+                    new_state = {}
+                    self.event_manager.record_invitation_result(
+                        message.chat.username, state.get('event_id', None), answer_code)
             elif state_name == 'remind_about_event.confirm':
                 pass
             elif state_name == 'return_money.confirm':
@@ -116,5 +146,4 @@ class SessionManager:
             # now we will handle each state according to the state itself and message.text
         if new_state is not None:
             self.set_state(message.chat.id, new_state)
-        if response is not None:
-            return response
+        return response, callback

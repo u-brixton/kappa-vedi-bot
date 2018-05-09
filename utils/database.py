@@ -59,8 +59,8 @@ class DBLogger:
         query = "INSERT INTO dialog VALUES('{}', '{}', '{}', '{}', TIMESTAMP '{}')".format(
             message.chat.id,
             message.chat.username,
-            message.text,
-            response,
+            message.text.replace("'", "\'"),
+            response.replace("'", "\'"),
             datetime.now()
         )
         # todo: escape single quotes in text and response
@@ -92,7 +92,9 @@ class EventManager:
     def __init__(self, connector):
         self.connector = connector
         self.connector.add_initial_query(
-            "CREATE TABLE IF NOT EXISTS club_event (event_id SERIAL PRIMARY KEY, place VARCHAR , planned_time TIMESTAMP , program VARCHAR , cost VARCHAR )")
+            "CREATE TABLE IF NOT EXISTS club_event(event_id SERIAL PRIMARY KEY, place VARCHAR , planned_time TIMESTAMP , program VARCHAR , cost VARCHAR )")
+        self.connector.add_initial_query(
+            "CREATE TABLE IF NOT EXISTS event_confirmation(username VARCHAR, event_id VARCHAR, answer_code VARCHAR, confirm_time TIMESTAMP)")
         self.update_events()
 
     def update_events(self):
@@ -109,3 +111,12 @@ class EventManager:
         if results:
             return results[0][0]
         return None
+
+    def record_invitation_result(self, username, event_id, answer_code):
+        query = "INSERT INTO event_confirmation VALUES('{}', '{}', '{}', '{}')".format(
+            username,
+            event_id,
+            answer_code,
+            datetime.now()
+        )
+        self.connector.sql_set(query)

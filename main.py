@@ -72,8 +72,12 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: True)
 @authorized_only
 def echo_all(message):
-    response = session_manager.process_message(message) or "Если вы есть – будьте первыми!"
+    response, callback = session_manager.process_message(message)
+    response = response or "Если вы есть – будьте первыми!"
     answer_with_log(message, response)
+    # callback is the action that must be performed just after the message is sent
+    if callback is not None:
+        callback()
 
 
 # bot.polling()
