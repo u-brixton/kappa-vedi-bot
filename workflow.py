@@ -13,7 +13,7 @@ def update_dict(base_dict, updates):
 def format_event_description(event_dict):
     return 'мероприятие:\n\tместо:\t{},\n\tвремя:\t{},\n\tпрограмма:\t{},\n\tвзнос:\t{}\n'.format(
         event_dict['place'],
-        event_dict['time'],  # todo: make sure the datetime renders corrrectly
+        event_dict['time'],
         event_dict['program'],
         event_dict['cost'])
 
@@ -99,12 +99,15 @@ class SessionManager:
                         else:
                             non_missing.append(username)
                             non_missing_chat_id.append(chat_id)
-                    response = response + '\nПриглашу: {}\nНет в чате: {}'.format(str(missing), str(non_missing))
+                    response = response + '\nПриглашу: {}\nНет в чате: {}'.format(
+                        ", ".join(non_missing) or "нет таких",
+                        ", ".join(missing) or "нет таких"
+                    )
                     # invitations must be set only after this function has finished - make it a callback
 
                     def callback_tmp():
                         for t_username, t_chat_id in zip(non_missing, non_missing_chat_id):
-                            self.send_function(surrogate_message(chat_id, t_username), invitation, reply=False)
+                            self.send_function(surrogate_message(t_chat_id, t_username), invitation, reply=False)
                             self.set_state(t_chat_id, {'name': 'invite_to_event.confirm', 'event_id': event_id})
                     callback = callback_tmp
                 else:

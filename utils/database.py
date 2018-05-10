@@ -67,11 +67,10 @@ class DBLogger:
         params = (
             message.chat.id,
             message.chat.username,
-            message.text.replace("'", r"\'"),
-            response.replace("'", r"\'"),
+            message.text,
+            response,
             datetime.now()
         )
-        # todo: escape single quotes in text and response (still not working!)
         self.connector.sql_set(query, params)
 
 
