@@ -23,28 +23,34 @@ class DBConnector:
                 self.conn = None
         return self.conn
 
-    def sql_get(self, query):
+    def sql_get(self, query, params=None):
+        if params is None:
+            params = []
         conn = self.get_connection()
         if conn is not None:
             cur = conn.cursor()
-            cur.execute(query)
+            cur.execute(query, params)
             result = cur.fetchall()
             return result
         return None
 
-    def sql_set(self, query):
+    def sql_set(self, query, params=None):
+        if params is None:
+            params = []
         conn = self.get_connection()
         if conn is not None:
             cur = conn.cursor()
-            cur.execute(query)
+            cur.execute(query, params)
             conn.commit()
             # todo: restart connection if there was a failure
 
-    def sql_set_get(self, query):
+    def sql_set_get(self, query, params=None):
+        if params is None:
+            params = []
         conn = self.get_connection()
         if conn is not None:
             cur = conn.cursor()
-            cur.execute(query)
+            cur.execute(query, params)
             conn.commit()
             result = cur.fetchall()
             return result
@@ -57,7 +63,8 @@ class DBLogger:
         self.connector.add_initial_query("CREATE TABLE IF NOT EXISTS dialog(chat_id varchar, user_name varchar, query varchar, response varchar, actualtime timestamp)")
     
     def log_message(self, message, response=None):
-        query = "INSERT INTO dialog VALUES('{}', '{}', '{}', '{}', TIMESTAMP '{}')".format(
+        query = "INSERT INTO dialog VALUES(%s, %s, %s, %s, TIMESTAMP %s);"
+        params = (
             message.chat.id,
             message.chat.username,
             message.text.replace("'", r"\'"),
@@ -65,7 +72,7 @@ class DBLogger:
             datetime.now()
         )
         # todo: escape single quotes in text and response (still not working!)
-        self.connector.sql_set(query)
+        self.connector.sql_set(query, params)
 
 
 class GroupManager:
@@ -81,7 +88,7 @@ class GroupManager:
         self.admins = ["cointegrated", "helmeton", "Stepan_Ivanov"]
 
     def get_chat_id_for_users(self, usernames):
-        query = "SELECT DISTINCT user_name, chat_id FROM dialog"
+        query = "SELECT DISTINCT user_name, chat_id FROM dialog;"
         results = self.connector.sql_get(query)
         if results is None:
             results = []
@@ -102,22 +109,24 @@ class EventManager:
         pass
 
     def add_event(self, event):
-        query = "INSERT INTO club_event(place, planned_time, program, cost) VALUES('{}', '{}', '{}', '{}') RETURNING event_id".format(
+        query = "INSERT INTO club_event(place, planned_time, program, cost) VALUES(%s, %s, %s, %s) RETURNING event_id;"
+        params = (
             event['place'],
             event['time'],
             event['program'],
             event['cost'],
         )
-        results = self.connector.sql_set_get(query)
+        results = self.connector.sql_set_get(query, params)
         if results:
             return results[0][0]
         return None
 
     def record_invitation_result(self, username, event_id, answer_code):
-        query = "INSERT INTO event_confirmation VALUES('{}', '{}', '{}', '{}')".format(
+        query = "INSERT INTO event_confirmation VALUES(%s, %s, %s, %s);"
+        params = (
             username,
             event_id,
             answer_code,
             datetime.now()
         )
-        self.connector.sql_set(query)
+        self.connector.sql_set(query, params)
