@@ -11,6 +11,17 @@ class DBConnector:
     def add_initial_query(self, query):
         self.initial_queries.append(query)
 
+    def _reset_connection(handler_function):
+        def wrapper(self, *args, **kwargs):
+            try:
+                result = handler_function(self, *args, **kwargs)
+            except Exception as e:
+                self.get_connection(force_update=True)
+                raise e
+            return result
+        return wrapper
+
+    @_reset_connection
     def get_connection(self, force_update=False):
         if self.conn is None or self.conn.closed or force_update:
             try:
@@ -23,6 +34,7 @@ class DBConnector:
                 self.conn = None
         return self.conn
 
+    @_reset_connection
     def sql_get(self, query, params=None):
         if params is None:
             params = []
@@ -34,6 +46,7 @@ class DBConnector:
             return result
         return None
 
+    @_reset_connection
     def sql_set(self, query, params=None):
         if params is None:
             params = []
@@ -72,6 +85,11 @@ class DBLogger:
             datetime.now()
         )
         self.connector.sql_set(query, params)
+
+    def get_tail(self, count=50):
+        query = "SELECT * FROM (SELECT * FROM dialog ORDER BY actualtime DESC LIMIT %s) as t ORDER BY actualtime ASC;"
+        params = [count, ]
+        return self.connector.sql_get(query, params)
 
 
 class GroupManager:

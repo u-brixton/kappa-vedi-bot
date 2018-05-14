@@ -1,9 +1,12 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 import telebot
 import os
 from utils.database import DBConnector, DBLogger, GroupManager, EventManager
 from workflow import SessionManager
 from flask import Flask, request
 from utils.telegram_api import surrogate_message
+import argparse
 
 TOKEN = os.environ['TOKEN']
 bot = telebot.TeleBot(TOKEN)
@@ -106,10 +109,21 @@ def wakeup():
     # todo: perform jobs (e.g. remind about events)
     # todo: update the visit time
     answer_with_log(surrogate_message('71034798', 'cointegrated'), "Я жив и напоминаю о себе!", reply=False)
-    pass
+    return "Маам, ну ещё пять минуточек!", 200
 
 
+parser = argparse.ArgumentParser(description='Run the bot')
+parser.add_argument('--poll', action='store_true')
+parser.add_argument('--logs', action='store_true')
 if __name__ == "__main__":
-    server.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)))
-    webhook()
+    args = parser.parse_args()
+    if args.logs:
+        for row in dblogger.get_tail(50):
+            print(row)
+    elif args.poll:
+        bot.remove_webhook()
+        bot.polling()
+    else:
+        server.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)))
+        webhook()
 

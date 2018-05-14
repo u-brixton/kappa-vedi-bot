@@ -66,6 +66,7 @@ class SessionManager:
                 response = 'Теперь введите дату и время в формате DD.MM.YYYY HH:MM (и никак иначе):'
                 new_state = update_dict(state, {'name': 'create_event.time', 'place': text})
             elif state_name == 'create_event.time':
+                # todo: validate the time format, ask again if needed
                 response = 'Теперь введите краткую программу мероприятия:'
                 new_state = update_dict(state, {'name': 'create_event.program', 'time': text})
             elif state_name == 'create_event.program':
@@ -103,8 +104,8 @@ class SessionManager:
                         ", ".join(non_missing) or "нет таких",
                         ", ".join(missing) or "нет таких"
                     )
-                    # invitations must be set only after this function has finished - make it a callback
 
+                    # invitations must be set only after this function has finished - make it a callback
                     def callback_tmp():
                         for t_username, t_chat_id in zip(non_missing, non_missing_chat_id):
                             self.send_function(surrogate_message(t_chat_id, t_username), invitation, reply=False)
