@@ -111,8 +111,9 @@ def wake_up():
                     response = response + ' и c @{}'.format(next_match)
                 response = response + ' . Если вы есть, будьте первыми!'
                 user_id = user_obj['tg_id']
-                bot.send_message(user_id, response)
-                LoggedMessage(text=response, user_id=user_id, from_user=False).save()
+                if datetime.today().weekday() == 5:  # todo: maybe, send reminder on other days of week
+                    bot.send_message(user_id, response)
+                    LoggedMessage(text=response, user_id=user_id, from_user=False).save()
     return "Маам, ну ещё пять минуточек!", 200
 
 
@@ -120,7 +121,7 @@ TAKE_PART = 'Участвовать в следующем кофе'
 NOT_TAKE_PART = 'Не участвовать в следующем кофе'
 
 HELP = """Я бот, который пока что умеет только назначать random coffee. 
-Это значит, что я каждую субботу выбираю вам в пару случайного члена клуба. 
+Это значит, что я каждую субботу в 8 вечера выбираю вам в пару случайного члена клуба. 
 После этого у вас есть неделя, чтобы встретиться, выпить вместе кофе и поговорить о жизни.
 Если вы есть, будьте первыми!"""
 
