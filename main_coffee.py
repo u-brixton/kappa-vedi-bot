@@ -109,7 +109,7 @@ def wake_up():
                 response = 'На этой неделе вы пьёте кофе с @{}'.format(matches[0])
                 for next_match in matches[1:]:
                     response = response + ' и c @{}'.format(next_match)
-                response + '. Если вы есть, будьте первыми!'
+                response = response + ' . Если вы есть, будьте первыми!'
                 user_id = user_obj['tg_id']
                 bot.send_message(user_id, response)
                 LoggedMessage(text=response, user_id=user_id, from_user=False).save()
