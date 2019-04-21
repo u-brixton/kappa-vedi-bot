@@ -5,6 +5,7 @@ import telebot
 import os
 import pymongo
 import random
+import re
 from datetime import datetime
 from collections import defaultdict
 from flask import Flask, request
@@ -123,6 +124,7 @@ NOT_TAKE_PART = 'Не участвовать в следующем кофе'
 HELP = """Я бот, который пока что умеет только назначать random coffee. 
 Это значит, что я каждую субботу в 8 вечера выбираю вам в пару случайного члена клуба. 
 После этого у вас есть неделя, чтобы встретиться, выпить вместе кофе и поговорить о жизни.
+(Неделя считается до следующих выходных включительно.)
 Если вы есть, будьте первыми!"""
 
 
@@ -132,7 +134,18 @@ def process_message(message):
     user_id = message.chat.id
     the_update = None
     LoggedMessage(text=message.text, user_id=user_id, from_user=True).save()
-    if message.text == TAKE_PART:
+    text_normalized = re.sub('[.,!?:;()\s]+', ' ', message.text.lower()).strip()
+    if re.match('привет', text_normalized):
+        intent = 'HELLO'
+        response = random.choice(
+            'Приветствую! \U0001f60a',
+            'Дратути!\U0001f643',
+            'Привет!',
+            'Привет-привет',
+            'Рад вас видеть!',
+            'Здравствуйте, сударь! \U0001f60e'
+        )
+    elif message.text == TAKE_PART:
         the_update = {"$set": {'wants_next_coffee': True}}
         response = 'Окей, на следующей неделе вы будете участвовать в random coffee!'
         intent = 'TAKE_PART'
