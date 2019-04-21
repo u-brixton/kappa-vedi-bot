@@ -137,14 +137,14 @@ def process_message(message):
     text_normalized = re.sub('[.,!?:;()\s]+', ' ', message.text.lower()).strip()
     if re.match('привет', text_normalized):
         intent = 'HELLO'
-        response = random.choice(
+        response = random.choice([
             'Приветствую! \U0001f60a',
             'Дратути!\U0001f643',
             'Привет!',
             'Привет-привет',
             'Рад вас видеть!',
             'Здравствуйте, сударь! \U0001f60e'
-        )
+        ])
     elif message.text == TAKE_PART:
         the_update = {"$set": {'wants_next_coffee': True}}
         response = 'Окей, на следующей неделе вы будете участвовать в random coffee!'
