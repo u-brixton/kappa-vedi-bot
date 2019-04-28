@@ -30,6 +30,7 @@ mongo_messages = mongo_db.get_collection('messages')
 mongo_coffee_pairs = mongo_db.get_collection('coffee_pairs')
 mongo_events = mongo_db.get_collection('events')
 mongo_participations = mongo_db.get_collection('event_participations')
+mongo_peoplebook = mongo_db.get_collection('peoplebook')
 
 
 class LoggedMessage:
@@ -246,7 +247,6 @@ def process_message(message):
         # todo: process the invitation
         response = 'Пока что я не научилась приглашать гостей'
     elif is_guest(user_object) and re.match('мой пиплбук', message.text):
-        mongo_peoplebook = mongo_db.get_collection('peoplebook')
         the_profile = mongo_peoplebook.find_one({'username': user_object['username']})
         if the_profile is None:
             intent = 'PEOPLEBOOK_GET_FAIL'
@@ -257,32 +257,26 @@ def process_message(message):
             response = response + peoplebook.render_text_profile(the_profile)
     elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_GET_FAIL' and re.match('да', text_normalized):
         intent = 'PEOPLEBOOK_CREATE_PROFILE'
-        mongo_peoplebook = mongo_db.get_collection('peoplebook')
         mongo_peoplebook.insert_one({'username': user_object['username']})
         response = 'Создаём профиль в пиплбуке. Пожалуйста, введите ваше имя (без фамилии):'
     elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_CREATE_PROFILE':
         intent = 'PEOPLEBOOK_SET_FIRST_NAME'
-        mongo_peoplebook = mongo_db.get_collection('peoplebook')
         mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'first_name': message.text}})
         response = 'Отлично! Теперь введите вашу фамилию:'
     elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_FIRST_NAME':
         intent = 'PEOPLEBOOK_SET_ACTIVITY'
-        mongo_peoplebook = mongo_db.get_collection('peoplebook')
         mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'last_name': message.text}})
         response = 'Отлично! Теперь расскажите, чем вы занимаетесь:'
     elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_ACTIVITY':
         intent = 'PEOPLEBOOK_SET_TOPICS'
-        mongo_peoplebook = mongo_db.get_collection('peoplebook')
         mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'activity': message.text}})
         response = 'Отлично! Теперь расскажите, о каких темах вы могли бы рассказать:'
     elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_TOPICS':
         intent = 'PEOPLEBOOK_SET_CONTACTS'
-        mongo_peoplebook = mongo_db.get_collection('peoplebook')
         mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'topics': message.text}})
         response = 'Отлично! Теперь перечислите ваши контакты:'
     elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_CONTACTS':
         intent = 'PEOPLEBOOK_SET_CONTACTS'
-        mongo_peoplebook = mongo_db.get_collection('peoplebook')
         mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'contacts': message.text}})
         # todo: ask about photo
         response = 'Отлично! Ваш профайл создан. Выглядит примерно так:'

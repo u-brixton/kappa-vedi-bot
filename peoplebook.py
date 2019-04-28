@@ -9,7 +9,7 @@ def render_text_profile(profile):
         '{}'.format(profile.get('topics', '')),
         '<b>Контакты</b>',
         profile.get('contacts', 't.me/{}'.format(profile.get('username', ''))),
-        '<a href="kv-peoplebook.herokuapp.com/user/{}">как это выглядит на сайте</a>'.format(
+        '<a href="kv-peoplebook.herokuapp.com/person/{}">как это выглядит на сайте</a>'.format(
             profile.get('username', 'does_not_exist')
         )
     ])
