@@ -3,10 +3,11 @@
 import argparse
 import telebot
 import os
+import peoplebook
 import pymongo
 import random
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 from flask import Flask, request
 from pymongo import MongoClient
@@ -27,6 +28,8 @@ mongo_db = mongo_client.get_default_database()
 mongo_users = mongo_db.get_collection('users')
 mongo_messages = mongo_db.get_collection('messages')
 mongo_coffee_pairs = mongo_db.get_collection('coffee_pairs')
+mongo_events = mongo_db.get_collection('events')
+mongo_participations = mongo_db.get_collection('event_participations')
 
 
 class LoggedMessage:
@@ -128,6 +131,22 @@ HELP = """Я бот, который пока что умеет только на
 Если вы есть, будьте первыми!"""
 
 
+def is_admin(user_object):
+    if user_object.get('username') in {'cointegrated', 'Stepan_Ivanov', 'JonibekOrtikov', 'love_buh', 'helmeton'}:
+        return True
+    return False
+
+
+def is_member(user_object):
+    # todo: lookup for the list of members
+    return True
+
+
+def is_guest(user_object):
+    # todo: lookup for the list of guests
+    return True
+
+
 @bot.message_handler(func=lambda message: True)
 def process_message(message):
     user_object = get_or_insert_user(message.from_user)
@@ -135,7 +154,141 @@ def process_message(message):
     the_update = None
     LoggedMessage(text=message.text, user_id=user_id, from_user=True).save()
     text_normalized = re.sub('[.,!?:;()\s]+', ' ', message.text.lower()).strip()
-    if re.match('привет', text_normalized):
+    last_intent = user_object.get('last_intent', '')
+    if is_admin(user_object) and text_normalized == 'созда(ть|й) встречу':
+        intent = 'EVENT_CREATE_INIT'
+        response = 'Придумайте название встречи (например, Встреча Каппа Веди 27 апреля):'
+        the_update = {'$set': {'event_to_create': {}}}
+    elif is_admin(user_object) and last_intent == 'EVENT_CREATE_INIT':
+        intent = 'EVENT_CREATE_SET_TITLE'
+        event_to_create = user_object.get('event_to_create', {})
+        # todo: validate that event title is not empty and long enough
+        event_to_create['title'] = message.text
+        the_update = {'$set': {'event_to_create': event_to_create}}
+        response = 'Хорошо, назовём встречу "{}".'.format(message.text)
+        response = response + '\nТеперь придумайте название встречи из латинских букв и цифр (например, april2019):'
+    elif is_admin(user_object) and last_intent == 'EVENT_CREATE_SET_TITLE':
+        intent = 'EVENT_CREATE_SET_CODE'
+        event_to_create = user_object.get('event_to_create', {})
+        # todo: validate that event code is indeed alphanumeric
+        # todo: validate that event code is not equal to any of the reserved commands
+        event_to_create['code'] = message.text
+        the_update = {'$set': {'event_to_create': event_to_create}}
+        response = 'Хорошо, код встречи будет "{}". '.format(message.text)
+        response = response + '\nТеперь введите дату встречи в формате ГГГГ.ММ.ДД:'
+    elif is_admin(user_object) and last_intent == 'EVENT_CREATE_SET_CODE':
+        intent = 'EVENT_CREATE_SET_DATE'
+        event_to_create = user_object.get('event_to_create', {})
+        # todo: validate that event date is indeed yyyy.mm.dd
+        event_to_create['date'] = message.text
+        the_update = {'$set': {'event_to_create': event_to_create}}
+        response = 'Хорошо, дата встречи будет "{}". '.format(message.text)
+        mongo_events.insert_one(event_to_create)
+        response = response + '\nВстреча успешно создана!'
+        # todo: propose sending invitations
+    elif is_member(user_object) and re.match('най[тд]и встреч[уи]', text_normalized):
+        intent = 'EVENT_GET_LIST'
+        all_events = mongo_events.find({})
+        # todo: compare with more exact time (or maybe just add a day buffer)
+        future_events = [
+            e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
+        ]
+        if len(future_events) > 0:
+            response = 'Найдены предстоящие события:\n'
+            for e in future_events:
+                response = response + '/{}: "{}", {}'.format(e['code'], e['title'], e['date'])
+        else:
+            response = 'Предстоящих событий не найдено'
+    elif is_member(user_object) and last_intent == 'EVENT_GET_LIST':
+        event_code = message.text.lstrip('/')
+        the_event = mongo_events.find_one({'code': event_code})
+        if the_event is not None:
+            intent = 'EVENT_CHOOSE_SUCCESS'
+            the_update = {'$set': {'event_code': event_code}}
+            response = 'Событие "{}" {}'.format(the_event['title'], the_event['date'])
+            # todo: check if the user participates
+            the_participation = mongo_participations.find_one(
+                {'username': user_object['username'], 'code': the_event['code']}
+            )
+            if the_participation is None or not the_participation.get('engaged'):
+                response = response + '\n /engage - участвовать'
+            else:
+                response = response + '\n /unengage - отказаться от участия'
+                response = response + '\n /invite - пригласить гостя (пока не работает)'
+                # todo: add the option to invite everyone
+        else:
+            intent = 'EVENT_CHOOSE_FAIL'
+            response = 'Такое событие не найдено'
+    elif is_member(user_object) and last_intent == 'EVENT_CHOOSE_SUCCESS' and message.text == '/engage':
+        intent = 'EVENT_ENGAGE'
+        event_code = user_object.get('event_code')
+        if event_code is None:
+            response = 'почему-то не удалось получить код события, сообщите @cointegrated'
+        else:
+            mongo_participations.update_one(
+                {'username': user_object['username'], 'code': event_code},
+                {'$set': {'engaged': True}}, upsert=True
+            )
+            response = 'Теперь вы участвуете в мероприятии {}!'.format(event_code)
+    elif is_member(user_object) and last_intent == 'EVENT_CHOOSE_SUCCESS' and message.text == '/unengage':
+        intent = 'EVENT_UNENGAGE'
+        event_code = user_object.get('event_code')
+        if event_code is None:
+            response = 'почему-то не удалось получить код события, сообщите @cointegrated'
+        else:
+            mongo_participations.update_one(
+                {'username': user_object['username'], 'code': event_code},
+                {'$set': {'engaged': False}}, upsert=True
+            )
+            response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
+    elif is_member(user_object) and last_intent == 'EVENT_CHOOSE_SUCCESS' and message.text == '/invite':
+        intent = 'EVENT_INVITE'
+        # todo: process the invitation
+        response = 'Пока что я не научилась приглашать гостей'
+    elif is_guest(user_object) and re.match('мой пиплбук', message.text):
+        mongo_peoplebook = mongo_db.get_collection('peoplebook')
+        the_profile = mongo_peoplebook.find_one({'username': user_object['username']})
+        if the_profile is None:
+            intent = 'PEOPLEBOOK_GET_FAIL'
+            response = 'У вас ещё нет профиля в пиплбуке. Завести?'
+        else:
+            intent = 'PEOPLEBOOK_GET_SUCCESS'
+            response = 'Ваш профиль:\n'
+            response = response + peoplebook.render_text_profile(the_profile)
+    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_GET_FAIL' and re.match('да', text_normalized):
+        intent = 'PEOPLEBOOK_CREATE_PROFILE'
+        mongo_peoplebook = mongo_db.get_collection('peoplebook')
+        mongo_peoplebook.insert_one({'username': user_object['username']})
+        response = 'Создаём профиль в пиплбуке. Пожалуйста, введите ваше имя (без фамилии):'
+    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_CREATE_PROFILE':
+        intent = 'PEOPLEBOOK_SET_FIRST_NAME'
+        mongo_peoplebook = mongo_db.get_collection('peoplebook')
+        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'first_name': message.text}})
+        response = 'Отлично! Теперь введите вашу фамилию:'
+    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_FIRST_NAME':
+        intent = 'PEOPLEBOOK_SET_ACTIVITY'
+        mongo_peoplebook = mongo_db.get_collection('peoplebook')
+        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'last_name': message.text}})
+        response = 'Отлично! Теперь расскажите, чем вы занимаетесь:'
+    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_ACTIVITY':
+        intent = 'PEOPLEBOOK_SET_TOPICS'
+        mongo_peoplebook = mongo_db.get_collection('peoplebook')
+        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'activity': message.text}})
+        response = 'Отлично! Теперь расскажите, о каких темах вы могли бы рассказать:'
+    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_TOPICS':
+        intent = 'PEOPLEBOOK_SET_CONTACTS'
+        mongo_peoplebook = mongo_db.get_collection('peoplebook')
+        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'topics': message.text}})
+        response = 'Отлично! Теперь перечислите ваши контакты:'
+    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_CONTACTS':
+        intent = 'PEOPLEBOOK_SET_CONTACTS'
+        mongo_peoplebook = mongo_db.get_collection('peoplebook')
+        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'contacts': message.text}})
+        # todo: ask about photo
+        response = 'Отлично! Ваш профайл создан. Выглядит примерно так:'
+        the_profile = mongo_peoplebook.find_one({'username': user_object['username']})
+        response = response + '\n' + peoplebook.render_text_profile(the_profile)
+    elif re.match('привет', text_normalized):
         intent = 'HELLO'
         response = random.choice([
             'Приветствую! \U0001f60a',
@@ -168,7 +321,7 @@ def process_message(message):
 
     LoggedMessage(text=response, user_id=user_id, from_user=False).save()
 
-    bot.reply_to(message, response, reply_markup=markup)
+    bot.reply_to(message, response, reply_markup=markup, parse_mode='html')
 
 
 @server.route('/' + TELEBOT_URL + TOKEN, methods=['POST'])
