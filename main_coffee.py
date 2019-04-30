@@ -147,144 +147,307 @@ def is_guest(user_object):
     # todo: lookup for the list of guests
     return True
 
+class Context:
+    def __init__(self, user_object=None, text=None):
+        self.user_object = user_object
+        self.last_intent = user_object.get('last_intent', '')
+        self.last_expected_inent = user_object.get('last_expected_intent', '')
+        self.text = text
+        self.text_normalized = re.sub('[.,!?:;()\s]+', ' ', text.lower()).strip()
 
-@bot.message_handler(func=lambda message: True)
-def process_message(message):
-    user_object = get_or_insert_user(message.from_user)
-    user_id = message.chat.id
-    the_update = None
-    LoggedMessage(text=message.text, user_id=user_id, from_user=True).save()
-    text_normalized = re.sub('[.,!?:;()\s]+', ' ', message.text.lower()).strip()
-    last_intent = user_object.get('last_intent', '')
-    if is_admin(user_object) and text_normalized == 'созда(ть|й) встречу':
-        intent = 'EVENT_CREATE_INIT'
-        response = 'Придумайте название встречи (например, Встреча Каппа Веди 27 апреля):'
-        the_update = {'$set': {'event_to_create': {}}}
-    elif is_admin(user_object) and last_intent == 'EVENT_CREATE_INIT':
-        intent = 'EVENT_CREATE_SET_TITLE'
-        event_to_create = user_object.get('event_to_create', {})
+        self.intent = None
+        self.response = None
+        self.the_update = None
+        self.expected_intent = None
+
+    def make_update(self):
+        if self.the_update is None:
+            the_update = {}
+        else:
+            the_update = self.the_update
+        if '$set' not in the_update:
+            the_update['$set'] = {}
+        the_update['$set']['last_intent'] = self.intent
+        the_update['$set']['last_expected_intent'] = self.expected_intent
+        return the_update
+
+
+def try_event_creation(ctx: Context):
+    if not is_admin(ctx.user_object):
+        return ctx
+    if ctx.text_normalized == 'созда(ть|й) встречу':
+        ctx.intent = 'EVENT_CREATE_INIT'
+        ctx.response = 'Придумайте название встречи (например, Встреча Каппа Веди 27 апреля):'
+        ctx.the_update = {'$set': {'event_to_create': {}}}
+    elif ctx.last_intent == 'EVENT_CREATE_INIT':
+        ctx.intent = 'EVENT_CREATE_SET_TITLE'
+        event_to_create = ctx.user_object.get('event_to_create', {})
         # todo: validate that event title is not empty and long enough
-        event_to_create['title'] = message.text
-        the_update = {'$set': {'event_to_create': event_to_create}}
-        response = 'Хорошо, назовём встречу "{}".'.format(message.text)
-        response = response + '\nТеперь придумайте название встречи из латинских букв и цифр (например, april2019):'
-    elif is_admin(user_object) and last_intent == 'EVENT_CREATE_SET_TITLE':
-        intent = 'EVENT_CREATE_SET_CODE'
-        event_to_create = user_object.get('event_to_create', {})
+        event_to_create['title'] = ctx.text
+        ctx.the_update = {'$set': {'event_to_create': event_to_create}}
+        ctx.response = (
+                'Хорошо, назовём встречу "{}".'.format(ctx.text)
+                + '\nТеперь придумайте название встречи из латинских букв и цифр '
+                + '(например, april2019):'
+        )
+    elif ctx.last_intent == 'EVENT_CREATE_SET_TITLE':
+        ctx.intent = 'EVENT_CREATE_SET_CODE'
+        event_to_create = ctx.user_object.get('event_to_create', {})
         # todo: validate that event code is indeed alphanumeric
         # todo: validate that event code is not equal to any of the reserved commands
-        event_to_create['code'] = message.text
-        the_update = {'$set': {'event_to_create': event_to_create}}
-        response = 'Хорошо, код встречи будет "{}". '.format(message.text)
-        response = response + '\nТеперь введите дату встречи в формате ГГГГ.ММ.ДД:'
-    elif is_admin(user_object) and last_intent == 'EVENT_CREATE_SET_CODE':
-        intent = 'EVENT_CREATE_SET_DATE'
-        event_to_create = user_object.get('event_to_create', {})
+        event_to_create['code'] = ctx.text
+        ctx.the_update = {'$set': {'event_to_create': event_to_create}}
+        ctx.response = (
+                'Хорошо, код встречи будет "{}". '.format(ctx.text)
+                + '\nТеперь введите дату встречи в формате ГГГГ.ММ.ДД:'
+        )
+    elif ctx.last_intent == 'EVENT_CREATE_SET_CODE':
+        ctx.intent = 'EVENT_CREATE_SET_DATE'
+        event_to_create = ctx.user_object.get('event_to_create', {})
         # todo: validate that event date is indeed yyyy.mm.dd
-        event_to_create['date'] = message.text
-        the_update = {'$set': {'event_to_create': event_to_create}}
-        response = 'Хорошо, дата встречи будет "{}". '.format(message.text)
+        event_to_create['date'] = ctx.text
+        ctx.the_update = {'$set': {'event_to_create': event_to_create}}
+        ctx.response = 'Хорошо, дата встречи будет "{}". '.format(ctx.text) + '\nВстреча успешно создана!'
         mongo_events.insert_one(event_to_create)
-        response = response + '\nВстреча успешно создана!'
         # todo: propose sending invitations
-    elif is_member(user_object) and re.match('най[тд]и встреч[уи]', text_normalized):
-        intent = 'EVENT_GET_LIST'
+    return ctx
+
+
+def try_event_usage(ctx: Context):
+    if not is_member(ctx.user_object):
+        return ctx
+    if re.match('най[тд]и встреч[уи]', ctx.text_normalized):
+        ctx.intent = 'EVENT_GET_LIST'
         all_events = mongo_events.find({})
         # todo: compare with more exact time (or maybe just add a day buffer)
         future_events = [
             e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
         ]
         if len(future_events) > 0:
-            response = 'Найдены предстоящие события:\n'
+            ctx.response = 'Найдены предстоящие события:\n'
             for e in future_events:
-                response = response + '/{}: "{}", {}'.format(e['code'], e['title'], e['date'])
+                ctx.response = ctx.response + '/{}: "{}", {}'.format(e['code'], e['title'], e['date'])
         else:
-            response = 'Предстоящих событий не найдено'
-    elif is_member(user_object) and last_intent == 'EVENT_GET_LIST':
-        event_code = message.text.lstrip('/')
+            ctx.response = 'Предстоящих событий не найдено'
+    elif ctx.last_intent == 'EVENT_GET_LIST':
+        event_code = ctx.text.lstrip('/')
         the_event = mongo_events.find_one({'code': event_code})
         if the_event is not None:
-            intent = 'EVENT_CHOOSE_SUCCESS'
-            the_update = {'$set': {'event_code': event_code}}
-            response = 'Событие "{}" {}'.format(the_event['title'], the_event['date'])
+            ctx.intent = 'EVENT_CHOOSE_SUCCESS'
+            ctx.the_update = {'$set': {'event_code': event_code}}
+            ctx.response = 'Событие "{}" {}'.format(the_event['title'], the_event['date'])
             # todo: check if the user participates
             the_participation = mongo_participations.find_one(
-                {'username': user_object['username'], 'code': the_event['code']}
+                {'username': ctx.user_object['username'], 'code': the_event['code']}
             )
             if the_participation is None or not the_participation.get('engaged'):
-                response = response + '\n /engage - участвовать'
+                ctx.response = ctx.response + '\n /engage - участвовать'
             else:
-                response = response + '\n /unengage - отказаться от участия'
-                response = response + '\n /invite - пригласить гостя (пока не работает)'
+                ctx.response = ctx.response + '\n /unengage - отказаться от участия'
+                ctx.response = ctx.response + '\n /invite - пригласить гостя (пока не работает)'
                 # todo: add the option to invite everyone
         else:
-            intent = 'EVENT_CHOOSE_FAIL'
-            response = 'Такое событие не найдено'
-    elif is_member(user_object) and last_intent == 'EVENT_CHOOSE_SUCCESS' and message.text == '/engage':
-        intent = 'EVENT_ENGAGE'
-        event_code = user_object.get('event_code')
+            ctx.intent = 'EVENT_CHOOSE_FAIL'
+            ctx.response = 'Такое событие не найдено'
+    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and ctx.text == '/engage':
+        ctx.intent = 'EVENT_ENGAGE'
+        event_code = ctx.user_object.get('event_code')
         if event_code is None:
-            response = 'почему-то не удалось получить код события, сообщите @cointegrated'
+            ctx.response = 'почему-то не удалось получить код события, сообщите @cointegrated'
         else:
             mongo_participations.update_one(
-                {'username': user_object['username'], 'code': event_code},
+                {'username': ctx.user_object['username'], 'code': event_code},
                 {'$set': {'engaged': True}}, upsert=True
             )
-            response = 'Теперь вы участвуете в мероприятии {}!'.format(event_code)
-    elif is_member(user_object) and last_intent == 'EVENT_CHOOSE_SUCCESS' and message.text == '/unengage':
-        intent = 'EVENT_UNENGAGE'
-        event_code = user_object.get('event_code')
+            ctx.response = 'Теперь вы участвуете в мероприятии {}!'.format(event_code)
+    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and ctx.text == '/unengage':
+        ctx.intent = 'EVENT_UNENGAGE'
+        event_code = ctx.user_object.get('event_code')
         if event_code is None:
-            response = 'почему-то не удалось получить код события, сообщите @cointegrated'
+            ctx.response = 'почему-то не удалось получить код события, сообщите @cointegrated'
         else:
             mongo_participations.update_one(
-                {'username': user_object['username'], 'code': event_code},
+                {'username': ctx.user_object['username'], 'code': event_code},
                 {'$set': {'engaged': False}}, upsert=True
             )
-            response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
-    elif is_member(user_object) and last_intent == 'EVENT_CHOOSE_SUCCESS' and message.text == '/invite':
-        intent = 'EVENT_INVITE'
+            ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
+    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and ctx.text == '/invite':
+        ctx.intent = 'EVENT_INVITE'
         # todo: process the invitation
-        response = 'Пока что я не научилась приглашать гостей'
-    elif is_guest(user_object) and re.match('мой пиплбук', message.text):
-        the_profile = mongo_peoplebook.find_one({'username': user_object['username']})
+        ctx.response = 'Пока что я не научился приглашать гостей'
+    return ctx
+
+
+class PB:
+    PEOPLEBOOK_GET_SUCCESS = 'PEOPLEBOOK_GET_SUCCESS'
+    PEOPLEBOOK_GET_FAIL = 'PEOPLEBOOK_GET_FAIL'
+    PEOPLEBOOK_DO_NOT_CREATE = 'PEOPLEBOOK_DO_NOT_CREATE'
+    PEOPLEBOOK_CREATE_PROFILE = 'PEOPLEBOOK_CREATE_PROFILE'
+    PEOPLEBOOK_SET_FIRST_NAME = 'PEOPLEBOOK_SET_FIRST_NAME'
+    PEOPLEBOOK_SET_LAST_NAME = 'PEOPLEBOOK_SET_LAST_NAME'
+    PEOPLEBOOK_SET_ACTIVITY = 'PEOPLEBOOK_SET_ACTIVITY'
+    PEOPLEBOOK_SET_TOPICS = 'PEOPLEBOOK_SET_TOPICS'
+    PEOPLEBOOK_SET_CONTACTS = 'PEOPLEBOOK_SET_CONTACTS'
+    PEOPLEBOOK_SET_PHOTO = 'PEOPLEBOOK_SET_PHOTO'
+    PEOPLEBOOK_SET_FINAL = 'PEOPLEBOOK_SET_FINAL'
+    PEOPLEBOOK_SHOW_PROFILE = 'PEOPLEBOOK_SHOW_PROFILE'
+    CREATING_PB_PROFILE = 'creating_pb_profile'
+
+
+def try_peoplebook_management(ctx: Context):
+    if not is_guest(ctx.user_object):
+        return ctx
+    # first process the incoming info
+    within = ctx.user_object.get(PB.CREATING_PB_PROFILE)
+    if re.match('мой пиплбук', ctx.text):
+        the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
         if the_profile is None:
-            intent = 'PEOPLEBOOK_GET_FAIL'
-            response = 'У вас ещё нет профиля в пиплбуке. Завести?'
+            ctx.intent = PB.PEOPLEBOOK_GET_FAIL
+            ctx.response = 'У вас ещё нет профиля в пиплбуке. Завести?'
         else:
-            intent = 'PEOPLEBOOK_GET_SUCCESS'
-            response = 'Ваш профиль:\n'
-            response = response + peoplebook.render_text_profile(the_profile)
-    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_GET_FAIL' and re.match('да', text_normalized):
-        intent = 'PEOPLEBOOK_CREATE_PROFILE'
-        mongo_peoplebook.insert_one({'username': user_object['username']})
-        response = 'Создаём профиль в пиплбуке. Пожалуйста, введите ваше имя (без фамилии):'
-    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_CREATE_PROFILE':
-        intent = 'PEOPLEBOOK_SET_FIRST_NAME'
-        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'first_name': message.text}})
-        response = 'Отлично! Теперь введите вашу фамилию:'
-    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_FIRST_NAME':
-        intent = 'PEOPLEBOOK_SET_ACTIVITY'
-        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'last_name': message.text}})
-        response = 'Отлично! Теперь расскажите, чем вы занимаетесь:'
-    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_ACTIVITY':
-        intent = 'PEOPLEBOOK_SET_TOPICS'
-        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'activity': message.text}})
-        response = 'Отлично! Теперь расскажите, о каких темах вы могли бы рассказать:'
-    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_TOPICS':
-        intent = 'PEOPLEBOOK_SET_CONTACTS'
-        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'topics': message.text}})
-        response = 'Отлично! Теперь перечислите ваши контакты:'
-    elif is_guest(user_object) and last_intent == 'PEOPLEBOOK_SET_CONTACTS':
-        intent = 'PEOPLEBOOK_SET_CONTACTS'
-        mongo_peoplebook.update_one({'username': user_object['username']}, {'$set': {'contacts': message.text}})
-        # todo: ask about photo
-        response = 'Отлично! Ваш профайл создан. Выглядит примерно так:'
-        the_profile = mongo_peoplebook.find_one({'username': user_object['username']})
-        response = response + '\n' + peoplebook.render_text_profile(the_profile)
-    elif re.match('привет', text_normalized):
-        intent = 'HELLO'
-        response = random.choice([
+            ctx.intent = PB.PEOPLEBOOK_GET_SUCCESS
+            ctx.response = 'Ваш профиль:\n' + peoplebook.render_text_profile(the_profile)
+    elif ctx.last_intent == PB.PEOPLEBOOK_GET_FAIL:
+        if re.match('да', ctx.text_normalized):
+            ctx.intent = PB.PEOPLEBOOK_CREATE_PROFILE
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_FIRST_NAME
+            mongo_peoplebook.insert_one({'username': ctx.user_object['username']})
+            ctx.the_update = {'$set': {PB.CREATING_PB_PROFILE: True}}
+            ctx.response = 'Отлично! Создаём профиль в пиплбуке.'
+        elif re.match('нет', ctx.text_normalized):
+            ctx.intent = PB.PEOPLEBOOK_DO_NOT_CREATE
+            ctx.response = 'На нет и суда нет.'
+        else:
+            ctx.intent = PB.PEOPLEBOOK_GET_FAIL
+            ctx.response = 'Так, я не понял. Профиль-то создавать? Ответьте "да" или "нет", пожалуйста.'
+    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_FIRST_NAME:
+        ctx.intent = PB.PEOPLEBOOK_SET_FIRST_NAME
+        if len(ctx.text_normalized) > 0:
+            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'first_name': ctx.text}})
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_LAST_NAME if within else PB.PEOPLEBOOK_SHOW_PROFILE
+            ctx.response = 'Отлично!'
+        else:
+            ctx.response = 'Получилось что-то странное, попробуйте ещё раз!'
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_FIRST_NAME
+    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_LAST_NAME:
+        ctx.intent = PB.PEOPLEBOOK_SET_LAST_NAME
+        if len(ctx.text_normalized) > 0:
+            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'last_name': ctx.text}})
+            ctx.response = 'Окей.'
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_ACTIVITY if within else PB.PEOPLEBOOK_SHOW_PROFILE
+        else:
+            ctx.response = 'Что-то маловато для фамилии, попробуйте ещё.'
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_LAST_NAME
+    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_ACTIVITY:
+        ctx.intent = PB.PEOPLEBOOK_SET_ACTIVITY
+        if len(ctx.text) >= 4:
+            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'activity': ctx.text}})
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_TOPICS if within else PB.PEOPLEBOOK_SHOW_PROFILE
+            ctx.response = 'Здорово!'
+        else:
+            ctx.response = 'Кажется, этого маловато. Надо повторить.'
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_ACTIVITY
+    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_TOPICS:
+        ctx.intent = PB.PEOPLEBOOK_SET_TOPICS
+        if len(ctx.text) >= 4:
+            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'topics': ctx.text}})
+            ctx.response = 'Интересненько.'
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_PHOTO if within else PB.PEOPLEBOOK_SHOW_PROFILE
+        else:
+            ctx.response = 'Попробуйте рассказать более развёрнуто.'
+            ctx.expected_intent = PB.PEOPLEBOOK_SET_TOPICS
+    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_PHOTO:
+        ctx.intent = PB.PEOPLEBOOK_SET_PHOTO
+        # todo: validate the photo
+        mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'photo': ctx.text.strip()}})
+        ctx.response = 'Отлично'
+        ctx.expected_intent = PB.PEOPLEBOOK_SET_CONTACTS if within else PB.PEOPLEBOOK_SHOW_PROFILE
+    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_CONTACTS:
+        ctx.intent = PB.PEOPLEBOOK_SET_CONTACTS
+        mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'contacts': ctx.text}})
+        if within:
+            the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
+            ctx.response = 'Отлично! Ваш профайл создан. Выглядит примерно так.'
+        ctx.expected_intent = PB.PEOPLEBOOK_SHOW_PROFILE
+    for k, v in {
+        '/set_pb_name': PB.PEOPLEBOOK_SET_FIRST_NAME,
+        '/set_pb_surname': PB.PEOPLEBOOK_SET_LAST_NAME,
+        '/set_pb_activity': PB.PEOPLEBOOK_SET_ACTIVITY,
+        '/set_pb_topics': PB.PEOPLEBOOK_SET_TOPICS,
+        '/set_pb_photo': PB.PEOPLEBOOK_SET_PHOTO,
+        '/set_pb_contacts': PB.PEOPLEBOOK_SET_CONTACTS
+    }.items():
+        if ctx.text == k:
+            ctx.expected_intent = v
+            ctx.intent = v
+            break
+        # todo: parse the case with command + target text
+    # then, prepare the response
+    if ctx.expected_intent is not None:
+        if ctx.response is None:
+            ctx.response = ''
+    if ctx.expected_intent == PB.PEOPLEBOOK_SET_FIRST_NAME:
+        ctx.response = ctx.response + '\nПожалуйста, введите ваше имя (без фамилии).'
+    elif ctx.expected_intent == PB.PEOPLEBOOK_SET_LAST_NAME:
+        ctx.response = ctx.response + '\nПожалуйста, назвовите вашу фамилию.'
+    elif ctx.expected_intent == PB.PEOPLEBOOK_SET_ACTIVITY:
+        ctx.response = ctx.response + '\nТеперь расскажите, чем вы занимаетесь. ' \
+                                      'Работа, предыдущая работа, сайдпроджекты, ресёрч. ' \
+                                      'Лучше развёрнуто, в несколько предложений. '
+    elif ctx.expected_intent == PB.PEOPLEBOOK_SET_TOPICS:
+        ctx.response = ctx.response + '\nПро что вас можно расспросить, о чём вы знаете больше других? ' \
+                                      'Это могут быть города, хобби, мероприятия, необычный опыт.'
+    elif ctx.expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
+        ctx.response = ctx.response + '\nДайте ссылку на фото, по которому вас проще всего будет найти. ' \
+                                      'Важно, чтобы лицо было хорошо видно. ' \
+                                      '\nСсылка должна быть не на страничку с фото, а на файл ' \
+                                      '(с расширением типа .png, .jpg и т.п. в конце ссылки).'
+    elif ctx.expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
+        ctx.response = ctx.response + '\nЕсли хотите, можете оставить контакты в соцсетях: ' \
+                                      'телеграм, инстаграм, линкедин, фб, вк, почта '
+    elif ctx.expected_intent == PB.PEOPLEBOOK_SHOW_PROFILE:
+        the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
+        ctx.response = ctx.response + '\nТак выглядит ваш профиль:\n' + peoplebook.render_text_profile(the_profile)
+    if ctx.response is not None:
+        ctx.response = ctx.response.strip()
+    return ctx
+
+
+def try_coffee_management(ctx: Context):
+    if ctx.text == TAKE_PART:
+        ctx.the_update = {"$set": {'wants_next_coffee': True}}
+        ctx.response = 'Окей, на следующей неделе вы будете участвовать в random coffee!'
+        ctx.intent = 'TAKE_PART'
+    elif ctx.text == NOT_TAKE_PART:
+        ctx.the_update = {"$set": {'wants_next_coffee': False}}
+        ctx.response = 'Окей, на следующей неделе вы не будете участвовать в random coffee!'
+        ctx.intent = 'NOT_TAKE_PART'
+    # todo: manage coffee suggests here
+    return ctx
+
+
+@bot.message_handler(func=lambda message: True)
+def process_message(msg):
+    uo = get_or_insert_user(msg.from_user)
+    user_id = msg.chat.id
+    LoggedMessage(text=msg.text, user_id=user_id, from_user=True).save()
+    ctx = Context(text=msg.text, user_object=uo)
+
+    for handler in [
+        try_event_creation,
+        try_event_usage,
+        try_peoplebook_management,
+        try_coffee_management
+    ]:
+        ctx = handler(ctx)
+        if ctx.intent is not None:
+            break
+
+    if ctx.intent is not None:
+        pass  # everything has been set by a handler
+    elif re.match('привет', ctx.text_normalized):
+        ctx.intent = 'HELLO'
+        ctx.response = random.choice([
             'Приветствую! \U0001f60a',
             'Дратути!\U0001f643',
             'Привет!',
@@ -292,30 +455,17 @@ def process_message(message):
             'Рад вас видеть!',
             'Здравствуйте, сударь! \U0001f60e'
         ])
-    elif message.text == TAKE_PART:
-        the_update = {"$set": {'wants_next_coffee': True}}
-        response = 'Окей, на следующей неделе вы будете участвовать в random coffee!'
-        intent = 'TAKE_PART'
-    elif message.text == NOT_TAKE_PART:
-        the_update = {"$set": {'wants_next_coffee': False}}
-        response = 'Окей, на следующей неделе вы не будете участвовать в random coffee!'
-        intent = 'NOT_TAKE_PART'
     else:
-        response = HELP
-        intent = 'OTHER'
-    if the_update is None:
-        the_update = {}
-    if '$set' not in the_update:
-        the_update['$set'] = {}
-    the_update['$set']['last_intent'] = intent
-    mongo_users.update_one({'tg_id': message.from_user.id}, the_update)
-    user_object = get_or_insert_user(tg_uid=message.from_user.id)
+        ctx.response = HELP
+        ctx.intent = 'OTHER'
+    mongo_users.update_one({'tg_id': msg.from_user.id}, ctx.make_update())
+    user_object = get_or_insert_user(tg_uid=msg.from_user.id)
     markup = types.ReplyKeyboardMarkup()
     markup.add(TAKE_PART if not user_object.get('wants_next_coffee') else NOT_TAKE_PART)
 
-    LoggedMessage(text=response, user_id=user_id, from_user=False).save()
+    LoggedMessage(text=ctx.response, user_id=user_id, from_user=False).save()
 
-    bot.reply_to(message, response, reply_markup=markup, parse_mode='html')
+    bot.reply_to(msg, ctx.response, reply_markup=markup, parse_mode='html')
 
 
 @server.route('/' + TELEBOT_URL + TOKEN, methods=['POST'])
