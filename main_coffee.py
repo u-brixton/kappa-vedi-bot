@@ -31,6 +31,7 @@ mongo_coffee_pairs = mongo_db.get_collection('coffee_pairs')
 mongo_events = mongo_db.get_collection('events')
 mongo_participations = mongo_db.get_collection('event_participations')
 mongo_peoplebook = mongo_db.get_collection('peoplebook')
+mongo_membership = mongo_db.get_collection('membership')
 
 
 class LoggedMessage:
@@ -133,7 +134,9 @@ HELP = """Я бот, который пока что умеет только на
 
 
 def is_admin(user_object):
-    if user_object.get('username') in {'cointegrated', 'Stepan_Ivanov', 'JonibekOrtikov', 'love_buh', 'helmeton'}:
+    if user_object.get('username').lower() in {
+        'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'
+    }:
         return True
     return False
 
@@ -215,7 +218,7 @@ def try_event_creation(ctx: Context):
 
 
 def try_event_usage(ctx: Context):
-    if not is_member(ctx.user_object):
+    if not is_member(ctx.user_object) and not is_guest(ctx.user_object):
         return ctx
     if re.match('най[тд]и встреч[уи]', ctx.text_normalized):
         ctx.intent = 'EVENT_GET_LIST'
@@ -296,7 +299,7 @@ class PB:
 
 
 def try_peoplebook_management(ctx: Context):
-    if not is_guest(ctx.user_object):
+    if not is_member(ctx.user_object) and not is_guest(ctx.user_object):
         return ctx
     # first process the incoming info
     within = ctx.user_object.get(PB.CREATING_PB_PROFILE)
@@ -420,6 +423,34 @@ def try_peoplebook_management(ctx: Context):
     return ctx
 
 
+def try_membership_management(ctx: Context):
+    if not is_member(ctx.user_object):
+        return ctx
+    # todo: add guest management
+    if not is_admin(ctx.user_object):
+        return ctx
+    # member management
+    if re.match('(добавь|добавить) (члена|членов)', ctx.text_normalized):
+        ctx.intent = 'MEMBER_ADD_INIT'
+        ctx.response = 'Введите телеграмовский логин/логины новых членов через пробел.'
+    elif ctx.last_intent == 'MEMBER_ADD_INIT':
+        ctx.intent = 'MEMBER_ADD_COMPLETE'
+        logins = [c.strip(',').strip('@').lower() for c in ctx.text.split()]
+        resp = 'Вот что получилось:'
+        for login in logins:
+            if not re.match('[a-z0-9_]{5,}', login):
+                resp = resp + '\nСлово "{}" не очень похоже на логин, пропускаю.'.format(login)
+                continue
+            existing = mongo_membership.find_one({'username': login, 'is_member': True})
+            if existing is None:
+                mongo_membership.update_one({'username': login}, {'$set': {'is_member': True}}, upsert=True)
+                resp = resp + '\n@{} успешно добавлен(а) список членов.'.format(login)
+            else:
+                resp = resp + '\n@{} уже является членом клуба.'.format(login)
+        ctx.response = resp
+    return ctx
+
+
 def try_coffee_management(ctx: Context):
     if ctx.text == TAKE_PART:
         ctx.the_update = {"$set": {'wants_next_coffee': True}}
@@ -444,7 +475,8 @@ def process_message(msg):
         try_event_creation,
         try_event_usage,
         try_peoplebook_management,
-        try_coffee_management
+        try_coffee_management,
+        try_membership_management
     ]:
         ctx = handler(ctx)
         if ctx.intent is not None:
