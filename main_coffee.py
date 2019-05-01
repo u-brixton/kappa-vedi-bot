@@ -147,6 +147,7 @@ def is_guest(user_object):
     # todo: lookup for the list of guests
     return True
 
+
 class Context:
     def __init__(self, user_object=None, text=None):
         self.user_object = user_object
@@ -366,8 +367,8 @@ def try_peoplebook_management(ctx: Context):
         ctx.intent = PB.PEOPLEBOOK_SET_CONTACTS
         mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'contacts': ctx.text}})
         if within:
-            the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
-            ctx.response = 'Отлично! Ваш профайл создан. Выглядит примерно так.'
+            ctx.response = 'Отлично! Ваш профайл создан.'
+            ctx.the_update = {'$unset': {PB.CREATING_PB_PROFILE: False}}
         ctx.expected_intent = PB.PEOPLEBOOK_SHOW_PROFILE
     for k, v in {
         '/set_pb_name': PB.PEOPLEBOOK_SET_FIRST_NAME,
@@ -378,8 +379,13 @@ def try_peoplebook_management(ctx: Context):
         '/set_pb_contacts': PB.PEOPLEBOOK_SET_CONTACTS
     }.items():
         if ctx.text == k:
-            ctx.expected_intent = v
-            ctx.intent = v
+            the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
+            if the_profile is None:
+                ctx.intent = PB.PEOPLEBOOK_GET_FAIL
+                ctx.response = 'У вас ещё нет профиля в пиплбуке. Завести?'
+            else:
+                ctx.expected_intent = v
+                ctx.intent = v
             break
         # todo: parse the case with command + target text
     # then, prepare the response
@@ -391,7 +397,7 @@ def try_peoplebook_management(ctx: Context):
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_LAST_NAME:
         ctx.response = ctx.response + '\nПожалуйста, назвовите вашу фамилию.'
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_ACTIVITY:
-        ctx.response = ctx.response + '\nТеперь расскажите, чем вы занимаетесь. ' \
+        ctx.response = ctx.response + '\nРасскажите, чем вы занимаетесь. ' \
                                       'Работа, предыдущая работа, сайдпроджекты, ресёрч. ' \
                                       'Лучше развёрнуто, в несколько предложений. '
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_TOPICS:
@@ -401,10 +407,11 @@ def try_peoplebook_management(ctx: Context):
         ctx.response = ctx.response + '\nДайте ссылку на фото, по которому вас проще всего будет найти. ' \
                                       'Важно, чтобы лицо было хорошо видно. ' \
                                       '\nСсылка должна быть не на страничку с фото, а на файл ' \
-                                      '(с расширением типа .png, .jpg и т.п. в конце ссылки).'
+                                      '(с расширением типа .png, .jpg и т.п. в конце ссылки).' \
+                                      '\nЕсли у вас нет ссылки, можно загрузить фото, например, на vfl.ru.'
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
         ctx.response = ctx.response + '\nЕсли хотите, можете оставить контакты в соцсетях: ' \
-                                      'телеграм, инстаграм, линкедин, фб, вк, почта '
+                                      'телеграм, инстаграм, линкедин, фб, вк, почта.'
     elif ctx.expected_intent == PB.PEOPLEBOOK_SHOW_PROFILE:
         the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
         ctx.response = ctx.response + '\nТак выглядит ваш профиль:\n' + peoplebook.render_text_profile(the_profile)
