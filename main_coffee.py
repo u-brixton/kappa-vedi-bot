@@ -134,6 +134,11 @@ HELP = """Я бот, который пока что умеет только на
 После этого у вас есть неделя, чтобы встретиться, выпить вместе кофе и поговорить о жизни.
 (Неделя считается до следующих выходных включительно.)
 Если вы есть, будьте первыми!"""
+HELP_UNAUTHORIZED = """Привет! Я бот Каппа Веди.
+К сожалению, вас нет в списке знакомых мне пользователей.
+Если вы гость встречи, попросите кого-то из членов клуба сделать для вас приглашение в боте.
+Если вы член клуба, попросите Жонибека, Степана, Дашу, Альфию или Давида добавить вас в список членов.
+Если вы есть, будьте первыми!"""
 
 
 def is_admin(user_object):
@@ -499,6 +504,13 @@ def try_coffee_management(ctx: Context):
     return ctx
 
 
+def try_unauthorized_help(ctx: Context):
+    if not is_member(ctx.user_object) and not is_guest(ctx.user_object):
+        ctx.intent = 'UNAUTHORIZED'
+        ctx.response = HELP_UNAUTHORIZED
+    return ctx
+
+
 @bot.message_handler(func=lambda message: True)
 def process_message(msg):
     uo = get_or_insert_user(msg.from_user)
@@ -511,7 +523,8 @@ def process_message(msg):
         try_event_usage,
         try_peoplebook_management,
         try_coffee_management,
-        try_membership_management
+        try_membership_management,
+        try_unauthorized_help
     ]:
         ctx = handler(ctx)
         if ctx.intent is not None:
