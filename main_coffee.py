@@ -7,11 +7,14 @@ import peoplebook
 import pymongo
 import random
 import re
+
 from datetime import datetime, timedelta
 from collections import defaultdict
 from flask import Flask, request
 from pymongo import MongoClient
 from telebot import types
+
+import matchers
 
 ON_HEROKU = os.environ.get('ON_HEROKU')
 TOKEN = os.environ['TOKEN']
@@ -155,7 +158,7 @@ class Context:
     def __init__(self, user_object=None, text=None):
         self.user_object = user_object
         self.last_intent = user_object.get('last_intent', '')
-        self.last_expected_inent = user_object.get('last_expected_intent', '')
+        self.last_expected_intent = user_object.get('last_expected_intent', '')
         self.text = text
         self.text_normalized = re.sub('[.,!?:;()\s]+', ' ', text.lower()).strip()
 
@@ -248,7 +251,7 @@ def try_event_usage(ctx: Context):
                 ctx.response = ctx.response + '\n /engage - участвовать'
             else:
                 ctx.response = ctx.response + '\n /unengage - отказаться от участия'
-                ctx.response = ctx.response + '\n /invite - пригласить гостя (пока не работает)'
+                ctx.response = ctx.response + '\n /invite - пригласить гостя'
                 # todo: add the option to invite everyone
         else:
             ctx.intent = 'EVENT_CHOOSE_FAIL'
@@ -275,10 +278,42 @@ def try_event_usage(ctx: Context):
                 {'$set': {'engaged': False}}, upsert=True
             )
             ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
-    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and ctx.text == '/invite':
+    elif ctx.user_object.get('event_code') is not None and ctx.text == '/invite':
         ctx.intent = 'EVENT_INVITE'
-        # todo: process the invitation
-        ctx.response = 'Пока что я не научился приглашать гостей'
+        ctx.expected_intent = 'EVENT_INVITE_LOGIN'
+        ctx.response = 'Хорошо! Введите Telegram логин человека, которого хотите пригласить на встречу.'
+    elif ctx.last_expected_intent == 'EVENT_INVITE_LOGIN':
+        ctx.intent = 'EVENT_INVITE_LOGIN'
+        the_login = ctx.text.strip().strip('@').lower()
+        event_code = ctx.user_object.get('event_code')
+        if event_code is None:
+            ctx.response = 'Почему-то не удалось получить код события, сообщите @cointegrated'
+        elif not matchers.is_like_telegram_login(the_login):
+            f = 'Текст "{}" не похож на логин в телеграме. Если хотите попробовать снова, нажмите /invite опять.'
+            ctx.response = f.format(the_login)
+        else:
+            existing_membership = mongo_membership.find_one({'username': the_login})
+            is_newcomer = existing_membership is None
+            existing_invitation = mongo_participations.find_one({'username': the_login, 'code': event_code})
+            if existing_invitation is not None:
+                ctx.response = 'Пользователь @{} уже получал приглашение на эту встречу!'.format(the_login)
+            else:
+                if is_newcomer:
+                    mongo_membership.update_one({'username': the_login}, {'$set': {'is_guest': True}}, upsert=True)
+                else:
+                    pass
+                    # todo: send an invitation immediately
+                mongo_participations.update_one(
+                    {'username': the_login, 'code': event_code},
+                    {'$set': {'status': 'invitation_not_sent', 'invitor': ctx.user_object['username']}},
+                    upsert=True
+                )
+                # todo: send an invitation after first login
+                r = 'Юзер @{} был добавлен в список участников встречи!'.format(the_login)
+                if is_newcomer:
+                    r = r + '\nПередайте ему/ей ссылку на меня (@kappa_vedi_bot), ' \
+                            'чтобы подтвердить участие и заполнить пиплбук.'
+                ctx.response = r
     return ctx
 
 
@@ -324,7 +359,7 @@ def try_peoplebook_management(ctx: Context):
         else:
             ctx.intent = PB.PEOPLEBOOK_GET_FAIL
             ctx.response = 'Так, я не понял. Профиль-то создавать? Ответьте "да" или "нет", пожалуйста.'
-    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_FIRST_NAME:
+    elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_FIRST_NAME:
         ctx.intent = PB.PEOPLEBOOK_SET_FIRST_NAME
         if len(ctx.text_normalized) > 0:
             mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'first_name': ctx.text}})
@@ -333,7 +368,7 @@ def try_peoplebook_management(ctx: Context):
         else:
             ctx.response = 'Получилось что-то странное, попробуйте ещё раз!'
             ctx.expected_intent = PB.PEOPLEBOOK_SET_FIRST_NAME
-    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_LAST_NAME:
+    elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_LAST_NAME:
         ctx.intent = PB.PEOPLEBOOK_SET_LAST_NAME
         if len(ctx.text_normalized) > 0:
             mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'last_name': ctx.text}})
@@ -342,7 +377,7 @@ def try_peoplebook_management(ctx: Context):
         else:
             ctx.response = 'Что-то маловато для фамилии, попробуйте ещё.'
             ctx.expected_intent = PB.PEOPLEBOOK_SET_LAST_NAME
-    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_ACTIVITY:
+    elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_ACTIVITY:
         ctx.intent = PB.PEOPLEBOOK_SET_ACTIVITY
         if len(ctx.text) >= 4:
             mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'activity': ctx.text}})
@@ -351,7 +386,7 @@ def try_peoplebook_management(ctx: Context):
         else:
             ctx.response = 'Кажется, этого маловато. Надо повторить.'
             ctx.expected_intent = PB.PEOPLEBOOK_SET_ACTIVITY
-    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_TOPICS:
+    elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_TOPICS:
         ctx.intent = PB.PEOPLEBOOK_SET_TOPICS
         if len(ctx.text) >= 4:
             mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'topics': ctx.text}})
@@ -360,13 +395,13 @@ def try_peoplebook_management(ctx: Context):
         else:
             ctx.response = 'Попробуйте рассказать более развёрнуто.'
             ctx.expected_intent = PB.PEOPLEBOOK_SET_TOPICS
-    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_PHOTO:
+    elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
         ctx.intent = PB.PEOPLEBOOK_SET_PHOTO
         # todo: validate the photo
         mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'photo': ctx.text.strip()}})
         ctx.response = 'Отлично'
         ctx.expected_intent = PB.PEOPLEBOOK_SET_CONTACTS if within else PB.PEOPLEBOOK_SHOW_PROFILE
-    elif ctx.last_expected_inent == PB.PEOPLEBOOK_SET_CONTACTS:
+    elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
         ctx.intent = PB.PEOPLEBOOK_SET_CONTACTS
         mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'contacts': ctx.text}})
         if within:
@@ -438,7 +473,7 @@ def try_membership_management(ctx: Context):
         logins = [c.strip(',').strip('@').lower() for c in ctx.text.split()]
         resp = 'Вот что получилось:'
         for login in logins:
-            if not re.match('[a-z0-9_]{5,}', login):
+            if not matchers.is_like_telegram_login(login):
                 resp = resp + '\nСлово "{}" не очень похоже на логин, пропускаю.'.format(login)
                 continue
             existing = mongo_membership.find_one({'username': login, 'is_member': True})
