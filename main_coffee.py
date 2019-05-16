@@ -175,6 +175,7 @@ class Context:
         self.response = None
         self.the_update = None
         self.expected_intent = None
+        self.suggests = []
 
     def make_update(self):
         if self.the_update is None:
@@ -232,7 +233,7 @@ def try_event_creation(ctx: Context):
 def try_event_usage(ctx: Context):
     if not is_member(ctx.user_object) and not is_guest(ctx.user_object):
         return ctx
-    if re.match('най[тд]и встреч[уи]', ctx.text_normalized):
+    if re.match('(най[тд]и|пока(жи|зать))( мои| все)? (встреч[уи]|событи[ея]|мероприяти[ея])', ctx.text_normalized):
         ctx.intent = 'EVENT_GET_LIST'
         all_events = mongo_events.find({})
         # todo: compare with more exact time (or maybe just add a day buffer)
@@ -347,7 +348,7 @@ def try_peoplebook_management(ctx: Context):
         return ctx
     # first process the incoming info
     within = ctx.user_object.get(PB.CREATING_PB_PROFILE)
-    if re.match('мой пиплбук', ctx.text):
+    if re.match('(покажи )?(мой )?(профиль (в )?)?(пиплбук|peoplebook)', ctx.text_normalized):
         the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
         if the_profile is None:
             ctx.intent = PB.PEOPLEBOOK_GET_FAIL
@@ -356,7 +357,7 @@ def try_peoplebook_management(ctx: Context):
             ctx.intent = PB.PEOPLEBOOK_GET_SUCCESS
             ctx.response = 'Ваш профиль:\n' + peoplebook.render_text_profile(the_profile)
     elif ctx.last_intent == PB.PEOPLEBOOK_GET_FAIL:
-        if re.match('да', ctx.text_normalized):
+        if re.match('да|ага|конечно', ctx.text_normalized):
             ctx.intent = PB.PEOPLEBOOK_CREATE_PROFILE
             ctx.expected_intent = PB.PEOPLEBOOK_SET_FIRST_NAME
             mongo_peoplebook.insert_one({'username': ctx.user_object['username']})
@@ -474,7 +475,7 @@ def try_membership_management(ctx: Context):
     if not is_admin(ctx.user_object):
         return ctx
     # member management
-    if re.match('(добавь|добавить) (члена|членов)( клуба)?', ctx.text_normalized):
+    if re.match('(добавь|добавить) (члена|членов)( в клуб| клуба)?', ctx.text_normalized):
         ctx.intent = 'MEMBER_ADD_INIT'
         ctx.response = 'Введите телеграмовский логин/логины новых членов через пробел.'
     elif ctx.last_intent == 'MEMBER_ADD_INIT':
@@ -504,7 +505,6 @@ def try_coffee_management(ctx: Context):
         ctx.the_update = {"$set": {'wants_next_coffee': False}}
         ctx.response = 'Окей, на следующей неделе вы не будете участвовать в random coffee!'
         ctx.intent = 'NOT_TAKE_PART'
-    # todo: manage coffee suggests here
     return ctx
 
 
@@ -551,9 +551,20 @@ def process_message(msg):
         ctx.intent = 'OTHER'
     mongo_users.update_one({'tg_id': msg.from_user.id}, ctx.make_update())
     user_object = get_or_insert_user(tg_uid=msg.from_user.id)
-    markup = types.ReplyKeyboardMarkup()
-    markup.add(TAKE_PART if not user_object.get('wants_next_coffee') else NOT_TAKE_PART)
 
+    # context-independent suggests (they are always below the dependent ones)
+    if is_guest(user_object) or is_member(user_object) or is_admin(user_object):
+        ctx.suggests.append('Покажи встречи')
+        ctx.suggests.append('Мой пиплбук')
+        ctx.suggests.append(TAKE_PART if not user_object.get('wants_next_coffee') else NOT_TAKE_PART)
+
+    if is_admin(user_object):
+        ctx.suggests.append('Создать встречу')
+        ctx.suggests.append('Добавить членов')
+
+    markup = types.ReplyKeyboardMarkup(row_width=max(1, min(3, int(len(ctx.suggests) / 2))))
+    # todo: split suggests into rows with respect to their lengths
+    markup.add(*ctx.suggests)
     LoggedMessage(text=ctx.response, user_id=user_id, from_user=False).save()
 
     bot.reply_to(msg, ctx.response, reply_markup=markup, parse_mode='html')
