@@ -353,6 +353,8 @@ def try_peoplebook_management(ctx: Context):
         if the_profile is None:
             ctx.intent = PB.PEOPLEBOOK_GET_FAIL
             ctx.response = 'У вас ещё нет профиля в пиплбуке. Завести?'
+            ctx.suggests.append('Да')
+            ctx.suggests.append('Нет')
         else:
             ctx.intent = PB.PEOPLEBOOK_GET_SUCCESS
             ctx.response = 'Ваш профиль:\n' + peoplebook.render_text_profile(the_profile)
@@ -369,6 +371,8 @@ def try_peoplebook_management(ctx: Context):
         else:
             ctx.intent = PB.PEOPLEBOOK_GET_FAIL
             ctx.response = 'Так, я не понял. Профиль-то создавать? Ответьте "да" или "нет", пожалуйста.'
+            ctx.suggests.append('Да!')
+            ctx.suggests.append('Нет!')
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_FIRST_NAME:
         ctx.intent = PB.PEOPLEBOOK_SET_FIRST_NAME
         if len(ctx.text_normalized) > 0:
@@ -431,6 +435,8 @@ def try_peoplebook_management(ctx: Context):
             if the_profile is None:
                 ctx.intent = PB.PEOPLEBOOK_GET_FAIL
                 ctx.response = 'У вас ещё нет профиля в пиплбуке. Завести?'
+                ctx.suggests.append('Да')
+                ctx.suggests.append('Нет')
             else:
                 ctx.expected_intent = v
                 ctx.intent = v
