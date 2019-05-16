@@ -4,11 +4,18 @@ from datetime import datetime
 
 
 def format_event_description(event_dict):
-    return 'мероприятие:\n\tместо:\t{},\n\tвремя:\t{},\n\tпрограмма:\t{},\n\tвзнос:\t{}\n'.format(
-        event_dict['place'],
-        event_dict['time'],
-        event_dict['program'],
-        event_dict['cost'])
+    result = 'Мероприятие:'
+    for key, title in [
+        ['place', 'место'],
+        ['time', 'время'],
+        ['program', 'программа'],
+        ['cost', 'взнос'],
+        ['chat', 'чат'],
+    ]:
+        if key in event_dict:
+            result = result + '\n\t{}: \t{},'.format(title, event_dict.get(key))
+    result = result + '\n'
+    return result
 
 
 class SessionManager(BaseSessionManager):

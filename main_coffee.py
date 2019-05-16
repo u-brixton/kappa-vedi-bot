@@ -67,6 +67,9 @@ def get_or_insert_user(tg_user=None, tg_uid=None):
         return None
     found = mongo_users.find_one({'tg_id': uid})
     if found is not None:
+        if tg_user is not None and found.get('username') != tg_user.username:
+            mongo_users.update_one({'tg_id': uid}, {'$set': {'username': tg_user.username}})
+            found = mongo_users.find_one({'tg_id': uid})
         return found
     if tg_user is None:
         return ValueError('User should be created, but telegram user object was not provided.')
@@ -133,11 +136,12 @@ HELP = """Я бот, который пока что умеет только на
 Это значит, что я каждую субботу в 8 вечера выбираю вам в пару случайного члена клуба. 
 После этого у вас есть неделя, чтобы встретиться, выпить вместе кофе и поговорить о жизни.
 (Неделя считается до следующих выходных включительно.)
+P.S. А ещё я скоро научусь приглашать гостей на встречи и обновлять странички в пиплбуке.
 Если вы есть, будьте первыми!"""
 HELP_UNAUTHORIZED = """Привет! Я бот Каппа Веди.
 К сожалению, вас нет в списке знакомых мне пользователей.
 Если вы гость встречи, попросите кого-то из членов клуба сделать для вас приглашение в боте.
-Если вы член клуба, попросите Жонибека, Степана, Дашу, Альфию или Давида добавить вас в список членов.
+Если вы член клуба, попросите Жонибека, Степана, Дашу, Альфию или Давида (@cointegrated) добавить вас в список членов.
 Если вы есть, будьте первыми!"""
 
 
@@ -150,8 +154,8 @@ def is_admin(user_object):
 
 
 def is_member(user_object):
-    # todo: lookup for the list of members
-    return True
+    existing = mongo_membership.find_one({'username': user_object.get('username', ''), 'is_member': True})
+    return existing is not None
 
 
 def is_guest(user_object):
@@ -470,7 +474,7 @@ def try_membership_management(ctx: Context):
     if not is_admin(ctx.user_object):
         return ctx
     # member management
-    if re.match('(добавь|добавить) (члена|членов)', ctx.text_normalized):
+    if re.match('(добавь|добавить) (члена|членов)( клуба)?', ctx.text_normalized):
         ctx.intent = 'MEMBER_ADD_INIT'
         ctx.response = 'Введите телеграмовский логин/логины новых членов через пробел.'
     elif ctx.last_intent == 'MEMBER_ADD_INIT':
@@ -484,7 +488,7 @@ def try_membership_management(ctx: Context):
             existing = mongo_membership.find_one({'username': login, 'is_member': True})
             if existing is None:
                 mongo_membership.update_one({'username': login}, {'$set': {'is_member': True}}, upsert=True)
-                resp = resp + '\n@{} успешно добавлен(а) список членов.'.format(login)
+                resp = resp + '\n@{} успешно добавлен(а) в список членов.'.format(login)
             else:
                 resp = resp + '\n@{} уже является членом клуба.'.format(login)
         ctx.response = resp
