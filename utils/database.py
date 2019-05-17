@@ -9,9 +9,13 @@ class Database:
         self.mongo_messages = self._mongo_db.get_collection('messages')
         self.mongo_coffee_pairs = self._mongo_db.get_collection('coffee_pairs')
         self.mongo_events = self._mongo_db.get_collection('events')
+        # title (text), code (text), date (text) # todo time place program cost chat
         self.mongo_participations = self._mongo_db.get_collection('event_participations')
+        # username, code, status (INVITATION_STATUSES), invitor (username)
         self.mongo_peoplebook = self._mongo_db.get_collection('peoplebook')
         self.mongo_membership = self._mongo_db.get_collection('membership')
+        self.message_queue = self._mongo_db.get_collection('message_queue')
+        # (username: text, text: text, intent: text, fresh: bool)
 
         self._admins = set([] if admins is None else admins)
 
