@@ -1,149 +1,35 @@
-import psycopg2
-from datetime import datetime
+from pymongo import MongoClient
 
 
-class DBConnector:
-    def __init__(self, db_url, initial_queries=None):
-        self.db_url = db_url
-        self.conn = None
-        self.initial_queries = initial_queries or []
-        
-    def add_initial_query(self, query):
-        self.initial_queries.append(query)
+class Database:
+    def __init__(self, mongo_url, admins=None):
+        self._mongo_client = MongoClient(mongo_url)
+        self._mongo_db = self._mongo_client.get_default_database()
+        self.mongo_users = self._mongo_db.get_collection('users')
+        self.mongo_messages = self._mongo_db.get_collection('messages')
+        self.mongo_coffee_pairs = self._mongo_db.get_collection('coffee_pairs')
+        self.mongo_events = self._mongo_db.get_collection('events')
+        self.mongo_participations = self._mongo_db.get_collection('event_participations')
+        self.mongo_peoplebook = self._mongo_db.get_collection('peoplebook')
+        self.mongo_membership = self._mongo_db.get_collection('membership')
 
-    def _reset_connection(handler_function):
-        def wrapper(self, *args, **kwargs):
-            try:
-                result = handler_function(self, *args, **kwargs)
-            except Exception as e:
-                self.get_connection(force_update=True)
-                raise e
-            return result
-        return wrapper
+        self._admins = set([] if admins is None else admins)
 
-    @_reset_connection
-    def get_connection(self, force_update=False):
-        if self.conn is None or self.conn.closed or force_update:
-            try:
-                self.conn = psycopg2.connect(self.db_url)
-                cur = self.conn.cursor()
-                for query in self.initial_queries:
-                    cur.execute(query)
-                self.conn.commit()
-            except Exception:
-                self.conn = None
-        return self.conn
+    def is_at_least_guest(self, user_object):
+        return self.is_guest(user_object) or self.is_member(user_object) or self.is_admin(user_object)
 
-    @_reset_connection
-    def sql_get(self, query, params=None):
-        if params is None:
-            params = []
-        conn = self.get_connection()
-        if conn is not None:
-            cur = conn.cursor()
-            cur.execute(query, params)
-            result = cur.fetchall()
-            return result
-        return None
+    def is_at_least_member(self, user_object):
+        return self.is_member(user_object) or self.is_admin(user_object)
 
-    @_reset_connection
-    def sql_set(self, query, params=None):
-        if params is None:
-            params = []
-        conn = self.get_connection()
-        if conn is not None:
-            cur = conn.cursor()
-            cur.execute(query, params)
-            conn.commit()
-            # todo: restart connection if there was a failure
+    def is_admin(self, user_object):
+        if user_object.get('username').lower() in self._admins:
+            return True
+        return False
 
-    def sql_set_get(self, query, params=None):
-        if params is None:
-            params = []
-        conn = self.get_connection()
-        if conn is not None:
-            cur = conn.cursor()
-            cur.execute(query, params)
-            conn.commit()
-            result = cur.fetchall()
-            return result
-        return None
+    def is_member(self, user_object):
+        existing = self.mongo_membership.find_one({'username': user_object.get('username', ''), 'is_member': True})
+        return existing is not None
 
-
-class DBLogger:
-    def __init__(self, connector):
-        self.connector = connector
-        self.connector.add_initial_query("CREATE TABLE IF NOT EXISTS dialog(chat_id varchar, user_name varchar, query varchar, response varchar, actualtime timestamp)")
-    
-    def log_message(self, message, response=None):
-        query = "INSERT INTO dialog VALUES(%s, %s, %s, %s, TIMESTAMP %s);"
-        params = (
-            message.chat.id,
-            message.chat.username,
-            message.text,
-            response,
-            datetime.now()
-        )
-        self.connector.sql_set(query, params)
-
-    def get_tail(self, count=50):
-        query = "SELECT * FROM (SELECT * FROM dialog ORDER BY actualtime DESC LIMIT %s) as t ORDER BY actualtime ASC;"
-        params = [count, ]
-        return self.connector.sql_get(query, params)
-
-
-class GroupManager:
-    def __init__(self, connector):
-        self.connector = connector
-        self.users = []
-        self.admins = []
-        self.update_groups()
-    
-    def update_groups(self):
-        # todo: connect to database or Google Sheets
-        self.users = ["cointegrated", "helmeton", "Stepan_Ivanov"]
-        self.admins = ["cointegrated", "helmeton", "Stepan_Ivanov"]
-
-    def get_chat_id_for_users(self, usernames):
-        query = "SELECT DISTINCT user_name, chat_id FROM dialog;"
-        results = self.connector.sql_get(query)
-        if results is None:
-            results = []
-        results = dict(results)
-        return [results.get(username) for username in usernames]
-
-
-class EventManager:
-    def __init__(self, connector):
-        self.connector = connector
-        self.connector.add_initial_query(
-            "CREATE TABLE IF NOT EXISTS club_event(event_id SERIAL PRIMARY KEY, place VARCHAR , planned_time TIMESTAMP , program VARCHAR , cost VARCHAR )")
-        self.connector.add_initial_query(
-            "CREATE TABLE IF NOT EXISTS event_confirmation(username VARCHAR, event_id VARCHAR, answer_code VARCHAR, confirm_time TIMESTAMP)")
-        self.update_events()
-
-    def update_events(self):
-        pass
-
-    def add_event(self, event):
-        query = "INSERT INTO club_event(place, planned_time, program, cost) VALUES(%s, %s, %s, %s) RETURNING event_id;"
-        params = (
-            event['place'],
-            event['time'],
-            event['program'],
-            event['cost'],
-        )
-        results = self.connector.sql_set_get(query, params)
-        if results:
-            return results[0][0]
-        return None
-
-    def record_invitation_result(self, username, event_id, answer_code):
-        query = "INSERT INTO event_confirmation VALUES(%s, %s, %s, %s);"
-        params = (
-            username,
-            event_id,
-            answer_code,
-            datetime.now()
-        )
-        self.connector.sql_set(query, params)
+    def is_guest(self, user_object):
+        # todo: lookup for the list of guests
+        return True

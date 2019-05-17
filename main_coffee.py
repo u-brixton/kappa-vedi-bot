@@ -8,10 +8,11 @@ import pymongo
 import random
 import re
 
+from utils.database import Database
+
 from datetime import datetime, timedelta
 from collections import defaultdict
 from flask import Flask, request
-from pymongo import MongoClient
 from telebot import types
 
 import matchers
@@ -24,43 +25,8 @@ server = Flask(__name__)
 TELEBOT_URL = 'telebot_webhook/'
 BASE_URL = 'https://kappa-vedi-bot.herokuapp.com/'
 
-
-class Database:
-    def __init__(self, mongo_url):
-        self._mongo_client = MongoClient(mongo_url)
-        self._mongo_db = self._mongo_client.get_default_database()
-        self.mongo_users = self._mongo_db.get_collection('users')
-        self.mongo_messages = self._mongo_db.get_collection('messages')
-        self.mongo_coffee_pairs = self._mongo_db.get_collection('coffee_pairs')
-        self.mongo_events = self._mongo_db.get_collection('events')
-        self.mongo_participations = self._mongo_db.get_collection('event_participations')
-        self.mongo_peoplebook = self._mongo_db.get_collection('peoplebook')
-        self.mongo_membership = self._mongo_db.get_collection('membership')
-
-    def is_at_least_guest(self, user_object):
-        return self.is_guest(user_object) or self.is_member(user_object) or self.is_admin(user_object)
-
-    def is_at_least_member(self, user_object):
-        return self.is_member(user_object) or self.is_admin(user_object)
-
-    def is_admin(self, user_object):
-        if user_object.get('username').lower() in {
-            'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'
-        }:
-            return True
-        return False
-
-    def is_member(self, user_object):
-        existing = self.mongo_membership.find_one({'username': user_object.get('username', ''), 'is_member': True})
-        return existing is not None
-
-    def is_guest(self, user_object):
-        # todo: lookup for the list of guests
-        return True
-
-
 MONGO_URL = os.environ.get('MONGODB_URI')
-DATABASE = Database(MONGO_URL)
+DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'})
 
 
 class LoggedMessage:
@@ -82,6 +48,21 @@ class LoggedMessage:
             'from_user': self.from_user,
             'timestamp': self.timestamp
         }
+
+
+def try_sending_message(bot, text, database, reply_to=None, user_id=None):
+    try:
+        bot.send_message(user_id, text)
+        LoggedMessage(text=text, user_id=user_id, from_user=False, database=database).save()
+    except Exception as e:
+        error = '\n'.join([
+            'Ошибка при отправке сообщения!',
+            'Текст: {}'.format(text),
+            'user_id: {}'.format(user_id),
+            'chat_id: {}'.format(reply_to.chat.username if reply_to is not None else None),
+            'error: {}'.format(e)
+        ])
+        bot.send_message(71034798, error)
 
 
 def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):
@@ -163,8 +144,7 @@ def remind_about_coffee(user_obj, matches, database: Database):
         response = 'На этой неделе вы, наверное, пили кофе {}.\nКак оно прошло?'.format(with_whom)
 
     if response is not None:
-        bot.send_message(user_id, response)
-        LoggedMessage(text=response, user_id=user_id, from_user=False, database=database).save()
+        try_sending_message(bot=bot, user_id=user_id, text=response, database=database)
 
 
 TAKE_PART = 'Участвовать в следующем кофе'
