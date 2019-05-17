@@ -25,26 +25,52 @@ TELEBOT_URL = 'telebot_webhook/'
 BASE_URL = 'https://kappa-vedi-bot.herokuapp.com/'
 
 
+class Database:
+    def __init__(self, mongo_url):
+        self._mongo_client = MongoClient(mongo_url)
+        self._mongo_db = self._mongo_client.get_default_database()
+        self.mongo_users = self._mongo_db.get_collection('users')
+        self.mongo_messages = self._mongo_db.get_collection('messages')
+        self.mongo_coffee_pairs = self._mongo_db.get_collection('coffee_pairs')
+        self.mongo_events = self._mongo_db.get_collection('events')
+        self.mongo_participations = self._mongo_db.get_collection('event_participations')
+        self.mongo_peoplebook = self._mongo_db.get_collection('peoplebook')
+        self.mongo_membership = self._mongo_db.get_collection('membership')
+
+    def is_at_least_guest(self, user_object):
+        return self.is_guest(user_object) or self.is_member(user_object) or self.is_admin(user_object)
+
+    def is_at_least_member(self, user_object):
+        return self.is_member(user_object) or self.is_admin(user_object)
+
+    def is_admin(self, user_object):
+        if user_object.get('username').lower() in {
+            'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'
+        }:
+            return True
+        return False
+
+    def is_member(self, user_object):
+        existing = self.mongo_membership.find_one({'username': user_object.get('username', ''), 'is_member': True})
+        return existing is not None
+
+    def is_guest(self, user_object):
+        # todo: lookup for the list of guests
+        return True
+
+
 MONGO_URL = os.environ.get('MONGODB_URI')
-mongo_client = MongoClient(MONGO_URL)
-mongo_db = mongo_client.get_default_database()
-mongo_users = mongo_db.get_collection('users')
-mongo_messages = mongo_db.get_collection('messages')
-mongo_coffee_pairs = mongo_db.get_collection('coffee_pairs')
-mongo_events = mongo_db.get_collection('events')
-mongo_participations = mongo_db.get_collection('event_participations')
-mongo_peoplebook = mongo_db.get_collection('peoplebook')
-mongo_membership = mongo_db.get_collection('membership')
+DATABASE = Database(MONGO_URL)
 
 
 class LoggedMessage:
-    def __init__(self, text, user_id, from_user):
+    def __init__(self, text, user_id, from_user, database: Database):
         self.text = text
         self.user_id = user_id
         self.from_user = from_user
         self.timestamp = str(datetime.utcnow())
 
-        self.mongo_collection = mongo_messages
+        self.mongo_collection = database.mongo_messages
 
     def save(self):
         self.mongo_collection.insert_one(self.to_dict())
@@ -58,18 +84,19 @@ class LoggedMessage:
         }
 
 
-def get_or_insert_user(tg_user=None, tg_uid=None):
+def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):
     if tg_user is not None:
         uid = tg_user.id
     elif tg_uid is not None:
         uid = tg_uid
     else:
         return None
-    found = mongo_users.find_one({'tg_id': uid})
+    assert database is not None
+    found = database.mongo_users.find_one({'tg_id': uid})
     if found is not None:
         if tg_user is not None and found.get('username') != tg_user.username:
-            mongo_users.update_one({'tg_id': uid}, {'$set': {'username': tg_user.username}})
-            found = mongo_users.find_one({'tg_id': uid})
+            database.mongo_users.update_one({'tg_id': uid}, {'$set': {'username': tg_user.username}})
+            found = database.mongo_users.find_one({'tg_id': uid})
         return found
     if tg_user is None:
         return ValueError('User should be created, but telegram user object was not provided.')
@@ -80,7 +107,7 @@ def get_or_insert_user(tg_user=None, tg_uid=None):
         username=tg_user.username,
         wants_next_coffee=False
     )
-    mongo_users.insert_one(new_user)
+    database.mongo_users.insert_one(new_user)
     return new_user
 
 
@@ -93,9 +120,10 @@ def web_hook():
 
 @server.route("/wakeup/")
 def wake_up():
+    database = DATABASE
     web_hook()
     if datetime.today().weekday() == 5:  # on saturday, we recalculate the matches
-        active_users = mongo_users.find({'wants_next_coffee': True})
+        active_users = database.mongo_users.find({'wants_next_coffee': True})
         print('active users: {}'.format(active_users))
         free_users = [user['username'] for user in active_users]
         random.shuffle(free_users)
@@ -106,27 +134,37 @@ def wake_up():
         if len(free_users) % 2 == 1:
             user_to_matches[free_users[0]].append(free_users[-1])
             user_to_matches[free_users[-1]].append(free_users[0])
-        mongo_coffee_pairs.insert_one({'date': str(datetime.utcnow()), 'matches': user_to_matches})
+        database.mongo_coffee_pairs.insert_one({'date': str(datetime.utcnow()), 'matches': user_to_matches})
 
-    last_matches = mongo_coffee_pairs.find_one({}, sort=[('_id', pymongo.DESCENDING)])
+    last_matches = database.mongo_coffee_pairs.find_one({}, sort=[('_id', pymongo.DESCENDING)])
     if last_matches is None:
         bot.send_message(71034798, 'я не нашёл матчей, посмотри логи плз')
     else:
         bot.send_message(71034798, 'вот какие матчи сегодня: {}'.format(last_matches))
         for username, matches in last_matches['matches'].items():
-            user_obj = mongo_users.find_one({'username': username})
+            user_obj = database.mongo_users.find_one({'username': username})
             if user_obj is None:
                 bot.send_message(71034798, 'юзер {} не был найден!'.format(username))
             else:
-                response = 'На этой неделе вы пьёте кофе с @{}'.format(matches[0])
-                for next_match in matches[1:]:
-                    response = response + ' и c @{}'.format(next_match)
-                response = response + ' . Если вы есть, будьте первыми!'
-                user_id = user_obj['tg_id']
-                if datetime.today().weekday() == 5:  # todo: maybe, send reminder on other days of week
-                    bot.send_message(user_id, response)
-                    LoggedMessage(text=response, user_id=user_id, from_user=False).save()
+                remind_about_coffee(user_obj, matches, database=database)
     return "Маам, ну ещё пять минуточек!", 200
+
+
+def remind_about_coffee(user_obj, matches, database: Database):
+    user_id = user_obj['tg_id']
+    with_whom = 'с @{}'.format(matches[0])
+    for next_match in matches[1:]:
+        with_whom = with_whom + ' и c @{}'.format(next_match)
+
+    response = None
+    if datetime.today().weekday() == 5:  # saturday
+        response = 'На этой неделе вы пьёте кофе {}.\nЕсли вы есть, будьте первыми!'.format(with_whom)
+    elif datetime.today().weekday() == 4:  # friday
+        response = 'На этой неделе вы, наверное, пили кофе {}.\nКак оно прошло?'.format(with_whom)
+
+    if response is not None:
+        bot.send_message(user_id, response)
+        LoggedMessage(text=response, user_id=user_id, from_user=False, database=database).save()
 
 
 TAKE_PART = 'Участвовать в следующем кофе'
@@ -143,24 +181,6 @@ HELP_UNAUTHORIZED = """Привет! Я бот Каппа Веди.
 Если вы гость встречи, попросите кого-то из членов клуба сделать для вас приглашение в боте.
 Если вы член клуба, попросите Жонибека, Степана, Дашу, Альфию или Давида (@cointegrated) добавить вас в список членов.
 Если вы есть, будьте первыми!"""
-
-
-def is_admin(user_object):
-    if user_object.get('username').lower() in {
-        'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'
-    }:
-        return True
-    return False
-
-
-def is_member(user_object):
-    existing = mongo_membership.find_one({'username': user_object.get('username', ''), 'is_member': True})
-    return existing is not None
-
-
-def is_guest(user_object):
-    # todo: lookup for the list of guests
-    return True
 
 
 class Context:
@@ -189,8 +209,8 @@ class Context:
         return the_update
 
 
-def try_event_creation(ctx: Context):
-    if not is_admin(ctx.user_object):
+def try_event_creation(ctx: Context, database: Database):
+    if not database.is_admin(ctx.user_object):
         return ctx
     if ctx.text_normalized == 'созда(ть|й) встречу':
         ctx.intent = 'EVENT_CREATE_INIT'
@@ -225,18 +245,17 @@ def try_event_creation(ctx: Context):
         event_to_create['date'] = ctx.text
         ctx.the_update = {'$set': {'event_to_create': event_to_create}}
         ctx.response = 'Хорошо, дата встречи будет "{}". '.format(ctx.text) + '\nВстреча успешно создана!'
-        mongo_events.insert_one(event_to_create)
+        database.mongo_events.insert_one(event_to_create)
         # todo: propose sending invitations
     return ctx
 
 
-def try_event_usage(ctx: Context):
-    if not is_member(ctx.user_object) and not is_guest(ctx.user_object):
+def try_event_usage(ctx: Context, database: Database):
+    if not database.is_at_least_guest(ctx.user_object):
         return ctx
     if re.match('(най[тд]и|пока(жи|зать))( мои| все)? (встреч[уи]|событи[ея]|мероприяти[ея])', ctx.text_normalized):
         ctx.intent = 'EVENT_GET_LIST'
-        all_events = mongo_events.find({})
-        # todo: compare with more exact time (or maybe just add a day buffer)
+        all_events = database.mongo_events.find({})
         future_events = [
             e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
         ]
@@ -248,13 +267,13 @@ def try_event_usage(ctx: Context):
             ctx.response = 'Предстоящих событий не найдено'
     elif ctx.last_intent == 'EVENT_GET_LIST':
         event_code = ctx.text.lstrip('/')
-        the_event = mongo_events.find_one({'code': event_code})
+        the_event = database.mongo_events.find_one({'code': event_code})
         if the_event is not None:
             ctx.intent = 'EVENT_CHOOSE_SUCCESS'
             ctx.the_update = {'$set': {'event_code': event_code}}
             ctx.response = 'Событие "{}" {}'.format(the_event['title'], the_event['date'])
             # todo: check if the user participates
-            the_participation = mongo_participations.find_one(
+            the_participation = database.mongo_participations.find_one(
                 {'username': ctx.user_object['username'], 'code': the_event['code']}
             )
             if the_participation is None or not the_participation.get('engaged'):
@@ -272,7 +291,7 @@ def try_event_usage(ctx: Context):
         if event_code is None:
             ctx.response = 'почему-то не удалось получить код события, сообщите @cointegrated'
         else:
-            mongo_participations.update_one(
+            database.mongo_participations.update_one(
                 {'username': ctx.user_object['username'], 'code': event_code},
                 {'$set': {'engaged': True}}, upsert=True
             )
@@ -283,7 +302,7 @@ def try_event_usage(ctx: Context):
         if event_code is None:
             ctx.response = 'почему-то не удалось получить код события, сообщите @cointegrated'
         else:
-            mongo_participations.update_one(
+            database.mongo_participations.update_one(
                 {'username': ctx.user_object['username'], 'code': event_code},
                 {'$set': {'engaged': False}}, upsert=True
             )
@@ -302,18 +321,20 @@ def try_event_usage(ctx: Context):
             f = 'Текст "{}" не похож на логин в телеграме. Если хотите попробовать снова, нажмите /invite опять.'
             ctx.response = f.format(the_login)
         else:
-            existing_membership = mongo_membership.find_one({'username': the_login})
+            existing_membership = database.mongo_membership.find_one({'username': the_login})
             is_newcomer = existing_membership is None
-            existing_invitation = mongo_participations.find_one({'username': the_login, 'code': event_code})
+            existing_invitation = database.mongo_participations.find_one({'username': the_login, 'code': event_code})
             if existing_invitation is not None:
                 ctx.response = 'Пользователь @{} уже получал приглашение на эту встречу!'.format(the_login)
             else:
                 if is_newcomer:
-                    mongo_membership.update_one({'username': the_login}, {'$set': {'is_guest': True}}, upsert=True)
+                    database.mongo_membership.update_one(
+                        {'username': the_login}, {'$set': {'is_guest': True}}, upsert=True
+                    )
                 else:
                     pass
                     # todo: send an invitation immediately
-                mongo_participations.update_one(
+                database.mongo_participations.update_one(
                     {'username': the_login, 'code': event_code},
                     {'$set': {'status': 'invitation_not_sent', 'invitor': ctx.user_object['username']}},
                     upsert=True
@@ -343,13 +364,13 @@ class PB:
     CREATING_PB_PROFILE = 'creating_pb_profile'
 
 
-def try_peoplebook_management(ctx: Context):
-    if not is_member(ctx.user_object) and not is_guest(ctx.user_object):
+def try_peoplebook_management(ctx: Context, database: Database):
+    if not database.is_at_least_guest(ctx.user_object):
         return ctx
     # first process the incoming info
     within = ctx.user_object.get(PB.CREATING_PB_PROFILE)
     if re.match('(покажи )?(мой )?(профиль (в )?)?(пиплбук|peoplebook)', ctx.text_normalized):
-        the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
+        the_profile = database.mongo_peoplebook.find_one({'username': ctx.user_object['username']})
         if the_profile is None:
             ctx.intent = PB.PEOPLEBOOK_GET_FAIL
             ctx.response = 'У вас ещё нет профиля в пиплбуке. Завести?'
@@ -362,7 +383,7 @@ def try_peoplebook_management(ctx: Context):
         if re.match('да|ага|конечно', ctx.text_normalized):
             ctx.intent = PB.PEOPLEBOOK_CREATE_PROFILE
             ctx.expected_intent = PB.PEOPLEBOOK_SET_FIRST_NAME
-            mongo_peoplebook.insert_one({'username': ctx.user_object['username']})
+            database.mongo_peoplebook.insert_one({'username': ctx.user_object['username']})
             ctx.the_update = {'$set': {PB.CREATING_PB_PROFILE: True}}
             ctx.response = 'Отлично! Создаём профиль в пиплбуке.'
         elif re.match('нет', ctx.text_normalized):
@@ -376,7 +397,9 @@ def try_peoplebook_management(ctx: Context):
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_FIRST_NAME:
         ctx.intent = PB.PEOPLEBOOK_SET_FIRST_NAME
         if len(ctx.text_normalized) > 0:
-            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'first_name': ctx.text}})
+            database.mongo_peoplebook.update_one(
+                {'username': ctx.user_object['username']}, {'$set': {'first_name': ctx.text}}
+            )
             ctx.expected_intent = PB.PEOPLEBOOK_SET_LAST_NAME if within else PB.PEOPLEBOOK_SHOW_PROFILE
             ctx.response = 'Отлично!'
         else:
@@ -385,7 +408,9 @@ def try_peoplebook_management(ctx: Context):
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_LAST_NAME:
         ctx.intent = PB.PEOPLEBOOK_SET_LAST_NAME
         if len(ctx.text_normalized) > 0:
-            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'last_name': ctx.text}})
+            database.mongo_peoplebook.update_one(
+                {'username': ctx.user_object['username']}, {'$set': {'last_name': ctx.text}}
+            )
             ctx.response = 'Окей.'
             ctx.expected_intent = PB.PEOPLEBOOK_SET_ACTIVITY if within else PB.PEOPLEBOOK_SHOW_PROFILE
         else:
@@ -394,7 +419,9 @@ def try_peoplebook_management(ctx: Context):
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_ACTIVITY:
         ctx.intent = PB.PEOPLEBOOK_SET_ACTIVITY
         if len(ctx.text) >= 4:
-            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'activity': ctx.text}})
+            database.mongo_peoplebook.update_one(
+                {'username': ctx.user_object['username']}, {'$set': {'activity': ctx.text}}
+            )
             ctx.expected_intent = PB.PEOPLEBOOK_SET_TOPICS if within else PB.PEOPLEBOOK_SHOW_PROFILE
             ctx.response = 'Здорово!'
         else:
@@ -403,7 +430,9 @@ def try_peoplebook_management(ctx: Context):
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_TOPICS:
         ctx.intent = PB.PEOPLEBOOK_SET_TOPICS
         if len(ctx.text) >= 4:
-            mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'topics': ctx.text}})
+            database.mongo_peoplebook.update_one(
+                {'username': ctx.user_object['username']}, {'$set': {'topics': ctx.text}}
+            )
             ctx.response = 'Интересненько.'
             ctx.expected_intent = PB.PEOPLEBOOK_SET_PHOTO if within else PB.PEOPLEBOOK_SHOW_PROFILE
         else:
@@ -412,12 +441,16 @@ def try_peoplebook_management(ctx: Context):
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
         ctx.intent = PB.PEOPLEBOOK_SET_PHOTO
         # todo: validate the photo
-        mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'photo': ctx.text.strip()}})
+        database.mongo_peoplebook.update_one(
+            {'username': ctx.user_object['username']}, {'$set': {'photo': ctx.text.strip()}}
+        )
         ctx.response = 'Отлично'
         ctx.expected_intent = PB.PEOPLEBOOK_SET_CONTACTS if within else PB.PEOPLEBOOK_SHOW_PROFILE
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
         ctx.intent = PB.PEOPLEBOOK_SET_CONTACTS
-        mongo_peoplebook.update_one({'username': ctx.user_object['username']}, {'$set': {'contacts': ctx.text}})
+        database.mongo_peoplebook.update_one(
+            {'username': ctx.user_object['username']}, {'$set': {'contacts': ctx.text}}
+        )
         if within:
             ctx.response = 'Отлично! Ваш профайл создан.'
             ctx.the_update = {'$unset': {PB.CREATING_PB_PROFILE: False}}
@@ -431,7 +464,7 @@ def try_peoplebook_management(ctx: Context):
         '/set_pb_contacts': PB.PEOPLEBOOK_SET_CONTACTS
     }.items():
         if ctx.text == k:
-            the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
+            the_profile = database.mongo_peoplebook.find_one({'username': ctx.user_object['username']})
             if the_profile is None:
                 ctx.intent = PB.PEOPLEBOOK_GET_FAIL
                 ctx.response = 'У вас ещё нет профиля в пиплбуке. Завести?'
@@ -467,18 +500,18 @@ def try_peoplebook_management(ctx: Context):
         ctx.response = ctx.response + '\nЕсли хотите, можете оставить контакты в соцсетях: ' \
                                       'телеграм, инстаграм, линкедин, фб, вк, почта.'
     elif ctx.expected_intent == PB.PEOPLEBOOK_SHOW_PROFILE:
-        the_profile = mongo_peoplebook.find_one({'username': ctx.user_object['username']})
+        the_profile = database.mongo_peoplebook.find_one({'username': ctx.user_object['username']})
         ctx.response = ctx.response + '\nТак выглядит ваш профиль:\n' + peoplebook.render_text_profile(the_profile)
     if ctx.response is not None:
         ctx.response = ctx.response.strip()
     return ctx
 
 
-def try_membership_management(ctx: Context):
-    if not is_member(ctx.user_object):
+def try_membership_management(ctx: Context, database: Database):
+    if not database.is_at_least_member(ctx.user_object):
         return ctx
     # todo: add guest management
-    if not is_admin(ctx.user_object):
+    if not database.is_admin(ctx.user_object):
         return ctx
     # member management
     if re.match('(добавь|добавить) (члена|членов)( в клуб| клуба)?', ctx.text_normalized):
@@ -492,9 +525,9 @@ def try_membership_management(ctx: Context):
             if not matchers.is_like_telegram_login(login):
                 resp = resp + '\nСлово "{}" не очень похоже на логин, пропускаю.'.format(login)
                 continue
-            existing = mongo_membership.find_one({'username': login, 'is_member': True})
+            existing = database.mongo_membership.find_one({'username': login, 'is_member': True})
             if existing is None:
-                mongo_membership.update_one({'username': login}, {'$set': {'is_member': True}}, upsert=True)
+                database.mongo_membership.update_one({'username': login}, {'$set': {'is_member': True}}, upsert=True)
                 resp = resp + '\n@{} успешно добавлен(а) в список членов.'.format(login)
             else:
                 resp = resp + '\n@{} уже является членом клуба.'.format(login)
@@ -502,7 +535,7 @@ def try_membership_management(ctx: Context):
     return ctx
 
 
-def try_coffee_management(ctx: Context):
+def try_coffee_management(ctx: Context, database: Database):
     if ctx.text == TAKE_PART:
         ctx.the_update = {"$set": {'wants_next_coffee': True}}
         ctx.response = 'Окей, на следующей неделе вы будете участвовать в random coffee!'
@@ -514,8 +547,8 @@ def try_coffee_management(ctx: Context):
     return ctx
 
 
-def try_unauthorized_help(ctx: Context):
-    if not is_member(ctx.user_object) and not is_guest(ctx.user_object):
+def try_unauthorized_help(ctx: Context, database: Database):
+    if not database.is_at_least_guest(ctx.user_object):
         ctx.intent = 'UNAUTHORIZED'
         ctx.response = HELP_UNAUTHORIZED
     return ctx
@@ -523,9 +556,10 @@ def try_unauthorized_help(ctx: Context):
 
 @bot.message_handler(func=lambda message: True)
 def process_message(msg):
-    uo = get_or_insert_user(msg.from_user)
+    database = DATABASE
+    uo = get_or_insert_user(msg.from_user, database=database)
     user_id = msg.chat.id
-    LoggedMessage(text=msg.text, user_id=user_id, from_user=True).save()
+    LoggedMessage(text=msg.text, user_id=user_id, from_user=True, database=database).save()
     ctx = Context(text=msg.text, user_object=uo)
 
     for handler in [
@@ -536,7 +570,7 @@ def process_message(msg):
         try_membership_management,
         try_unauthorized_help
     ]:
-        ctx = handler(ctx)
+        ctx = handler(ctx, database=database)
         if ctx.intent is not None:
             break
 
@@ -555,23 +589,25 @@ def process_message(msg):
     else:
         ctx.response = HELP
         ctx.intent = 'OTHER'
-    mongo_users.update_one({'tg_id': msg.from_user.id}, ctx.make_update())
-    user_object = get_or_insert_user(tg_uid=msg.from_user.id)
+    database.mongo_users.update_one({'tg_id': msg.from_user.id}, ctx.make_update())
+    user_object = get_or_insert_user(tg_uid=msg.from_user.id, database=database)
 
     # context-independent suggests (they are always below the dependent ones)
-    if is_guest(user_object) or is_member(user_object) or is_admin(user_object):
-        ctx.suggests.append('Покажи встречи')
-        ctx.suggests.append('Мой пиплбук')
+    if database.is_at_least_member(user_object):
         ctx.suggests.append(TAKE_PART if not user_object.get('wants_next_coffee') else NOT_TAKE_PART)
 
-    if is_admin(user_object):
+    if database.is_at_least_guest(user_object):
+        ctx.suggests.append('Покажи встречи')
+        ctx.suggests.append('Мой пиплбук')
+
+    if database.is_admin(user_object):
         ctx.suggests.append('Создать встречу')
         ctx.suggests.append('Добавить членов')
 
     markup = types.ReplyKeyboardMarkup(row_width=max(1, min(3, int(len(ctx.suggests) / 2))))
     # todo: split suggests into rows with respect to their lengths
     markup.add(*ctx.suggests)
-    LoggedMessage(text=ctx.response, user_id=user_id, from_user=False).save()
+    LoggedMessage(text=ctx.response, user_id=user_id, from_user=False, database=database).save()
 
     bot.reply_to(msg, ctx.response, reply_markup=markup, parse_mode='html')
 
