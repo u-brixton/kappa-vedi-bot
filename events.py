@@ -1,7 +1,7 @@
 from utils.database import Database
 from utils.dialogue_management import Context
 
-import matchers
+from utils import matchers
 import re
 
 from datetime import datetime, timedelta
@@ -217,7 +217,9 @@ class EventCreationIntents:
 def try_parse_date(text):
     try:
         return datetime.strptime(text, '%Y.%m.%d')
-    except Exception as e:
+    except ValueError:
+        return None
+    except TypeError:
         return None
 
 
@@ -364,10 +366,9 @@ EVENT_FIELD_BY_INTENT = {e.intent: e for e in EVENT_FIELDS}
 EVENT_EDITION_COMMANDS = '\n'.join(
     [""]
     + ['{} - задать {}'.format(e.command, e.name_accs) for e in EVENT_FIELDS] +
-    [
-        "/remove_event - удалить событие и отменить все приглашения",
-        "/invite_everyone - пригласить всех членов клуба"
-])
+    ["/remove_event - удалить событие и отменить все приглашения",
+     "/invite_everyone - пригласить всех членов клуба"]
+)
 
 
 def format_event_description(event_dict):
@@ -417,6 +418,7 @@ def try_event_edition(ctx: Context, database: Database):
     elif ctx.last_expected_intent == 'EVENT_REMOVE_CONFIRM':
         if matchers.is_like_yes(ctx.text_normalized):
             database.mongo_events.delete_one({'code': event_code})
+            database.mongo_participations.delete_many({'code': event_code})
             ctx.the_update = {'$unset': {'event_code': ""}}
             ctx.intent = 'EVENT_REMOVE_CONFIRM'
             ctx.response = 'Хорошо. Событие "{}" было удалено.'.format(the_event['title'])

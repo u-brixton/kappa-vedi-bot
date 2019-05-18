@@ -1,7 +1,7 @@
 from utils.database import Database
 from utils.dialogue_management import Context
 
-import matchers
+from utils import matchers
 import re
 
 

@@ -9,7 +9,7 @@ class Database:
         self.mongo_messages = self._mongo_db.get_collection('messages')
         self.mongo_coffee_pairs = self._mongo_db.get_collection('coffee_pairs')
         self.mongo_events = self._mongo_db.get_collection('events')
-        # title (text), code (text), date (text) # todo time place program cost chat
+        # title (text), code (text), date (text), ... and many other fields
         self.mongo_participations = self._mongo_db.get_collection('event_participations')
         # username, code, status (INVITATION_STATUSES), invitor (username)
         self.mongo_peoplebook = self._mongo_db.get_collection('peoplebook')

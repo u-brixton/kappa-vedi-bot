@@ -18,7 +18,7 @@ from datetime import datetime
 from flask import Flask, request
 from telebot import types
 
-import matchers
+from utils import matchers
 
 ON_HEROKU = os.environ.get('ON_HEROKU')
 TOKEN = os.environ['TOKEN']
