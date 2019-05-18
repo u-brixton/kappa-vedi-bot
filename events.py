@@ -350,7 +350,7 @@ class EventField:
 EVENT_FIELDS = [
     EventField(*r) for r in [
         ['title', 'название', '.{3,}'],
-        ['date', 'дата', '\d\d\d\d\.\d\d\.\d\d'],
+        ['date', 'дата', lambda text: (try_parse_date(text) is not None)],
         ['time', 'время', '.{3,}'],
         ['place', 'адрес', '.{3,}'],
         ['program', 'программа', '.{3,}'],

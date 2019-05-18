@@ -7,7 +7,7 @@ import pymongo
 import random
 import re
 
-from utils.database import Database
+from utils.database import Database, LoggedMessage, get_or_insert_user
 from utils.dialogue_management import Context
 
 from events import try_invitation, try_event_usage, try_event_creation, try_event_edition
@@ -32,31 +32,10 @@ MONGO_URL = os.environ.get('MONGODB_URI')
 DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'})
 
 
-class LoggedMessage:
-    def __init__(self, text, user_id, from_user, database: Database):
-        self.text = text
-        self.user_id = user_id
-        self.from_user = from_user
-        self.timestamp = str(datetime.utcnow())
-
-        self.mongo_collection = database.mongo_messages
-
-    def save(self):
-        self.mongo_collection.insert_one(self.to_dict())
-
-    def to_dict(self):
-        return {
-            'text': self.text,
-            'user_id': self.user_id,
-            'from_user': self.from_user,
-            'timestamp': self.timestamp
-        }
-
-
-def render_markup(suggests=None):
+def render_markup(suggests=None, max_columns=3, initial_ratio=2):
     if suggests is None:
         return None
-    markup = types.ReplyKeyboardMarkup(row_width=max(1, min(3, int(len(suggests) / 2))))
+    markup = types.ReplyKeyboardMarkup(row_width=max(1, min(max_columns, int(len(suggests) / initial_ratio))))
     markup.add(*suggests)
     return markup
 
@@ -82,33 +61,6 @@ def try_sending_message(text, database, reply_to=None, user_id=None, suggests=No
         ])
         bot.send_message(71034798, error)
         return False
-
-
-def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):
-    if tg_user is not None:
-        uid = tg_user.id
-    elif tg_uid is not None:
-        uid = tg_uid
-    else:
-        return None
-    assert database is not None
-    found = database.mongo_users.find_one({'tg_id': uid})
-    if found is not None:
-        if tg_user is not None and found.get('username') != tg_user.username:
-            database.mongo_users.update_one({'tg_id': uid}, {'$set': {'username': tg_user.username}})
-            found = database.mongo_users.find_one({'tg_id': uid})
-        return found
-    if tg_user is None:
-        return ValueError('User should be created, but telegram user object was not provided.')
-    new_user = dict(
-        tg_id=tg_user.id,
-        first_name=tg_user.first_name,
-        last_name=tg_user.last_name,
-        username=tg_user.username,
-        wants_next_coffee=False
-    )
-    database.mongo_users.insert_one(new_user)
-    return new_user
 
 
 @server.route("/" + TELEBOT_URL)
