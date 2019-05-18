@@ -1,4 +1,13 @@
 import re
+import pymorphy2
+
+morph = pymorphy2.MorphAnalyzer()
+
+
+def inflect_first_word(text, case):
+    words = text.split()
+    first_word = morph.parse(words[0])[0].inflect({case}).word
+    return ' '.join([first_word] + words[1:])
 
 
 def is_like_telegram_login(text):

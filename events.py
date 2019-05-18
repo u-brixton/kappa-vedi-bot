@@ -24,23 +24,19 @@ class EventIntents:
     REJECT = 'REJECT'
 
 
-def format_event_description(event_dict):
-    result = 'Мероприятие:'
-    for key, title in [
-        ['title', 'название'],
-        ['date', 'дата'],
-        ['time', 'время'],
-        ['place', 'место'],
-        ['program', 'программа'],
-        ['cost', 'взнос'],
-        ['chat', 'чат'],
-    ]:
-        if event_dict.get(key, '') != '':
-            result = result + '\n\t{}: \t{}'.format(title, event_dict.get(key))
-    result = result + '\n\tпиплбук встречи: <a href="{}{}">ссылка</a>\n'.format(
-        PEOPLEBOOK_EVENT_ROOT, event_dict.get('code')
+def render_full_event(ctx: Context, database: Database, the_event):
+    response = format_event_description(the_event)
+    the_participation = database.mongo_participations.find_one(
+        {'username': ctx.user_object['username'], 'code': the_event['code']}
     )
-    return result
+    if the_participation is None or the_participation.get('status') != InvitationStatuses.ACCEPT:
+        response = response + '\nВы не участвуете.\n /engage - участвовать'
+    else:
+        response = response + '\nВы участвуете.\n /unengage - отказаться от участия'
+        response = response + '\n /invite - пригласить гостя'
+        if database.is_admin(ctx.user_object):
+            response = response + EVENT_EDITION_COMMANDS
+    return response
 
 
 def make_invitation(invitation, database: Database):
@@ -132,17 +128,9 @@ def try_event_usage(ctx: Context, database: Database):
         if the_event is not None:
             ctx.intent = 'EVENT_CHOOSE_SUCCESS'
             ctx.the_update = {'$set': {'event_code': event_code}}
-            ctx.response = format_event_description(the_event)
-            the_participation = database.mongo_participations.find_one(
-                {'username': ctx.user_object['username'], 'code': the_event['code']}
-            )
-            if the_participation is None or the_participation.get('status') != InvitationStatuses.ACCEPT:
-                ctx.response = ctx.response + '\nВы не участвуете.\n /engage - участвовать'
-            else:
-                ctx.response = ctx.response + '\nВы участвуете.\n /unengage - отказаться от участия'
-                ctx.response = ctx.response + '\n /invite - пригласить гостя'
-                if database.is_admin(ctx.user_object):
-                    ctx.suggests.append('Пригласить всех членов клуба')
+            ctx.response = render_full_event(ctx, database, the_event)
+            if database.is_admin(ctx.user_object):
+                ctx.suggests.append('Пригласить всех членов клуба')
     elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and (
             ctx.text == '/engage' or re.match('(участвовать|принять участие)', ctx.text_normalized)
     ):
@@ -309,7 +297,7 @@ def try_event_creation(ctx: Context, database: Database):
             ctx.response = 'Хорошо, дата встречи будет "{}". '.format(ctx.text) + '\nВстреча успешно создана!'
             ctx.suggests.append('Пригласить всех членов клуба')
     elif event_code is not None:  # this event is context-independent, triggers at any time just by text
-        if re.match('пригласить (всех|весь).*', ctx.text_normalized):
+        if re.match('пригласить (всех|весь).*', ctx.text_normalized) or ctx.text == '/invite_everyone':
             ctx.intent = 'INVITE_EVERYONE'
             ctx.response = 'Действительно пригласить всех членов клуба на встречу {}?'.format(event_code)
             ctx.suggests.extend(['Да', 'Нет'])
@@ -336,4 +324,103 @@ def try_event_creation(ctx: Context, database: Database):
                     status = 'успех' if success else 'не получилось'
                 r = r + '\n  @{}: {}'.format(member['username'], status)
             ctx.response = r
+    return ctx
+
+
+class EventField:
+    def __init__(self, code: str, name: str, validator):
+        self.code = code
+        self.command = '/set_e_' + code
+        self.intent = 'EVENT_EDIT_' + code.upper()
+        self.name = name
+        self.name_accs = matchers.inflect_first_word(self.name, 'accs')
+        self.validator = validator
+
+    def validate(self, text):
+        if self.validator is None:
+            return True
+        elif isinstance(self.validator, str):
+            return bool(re.match(self.validator, text))
+        else:
+            return bool(self.validator(text))
+
+
+EVENT_FIELDS = [
+    EventField(*r) for r in [
+        ['title', 'название', '.{3,}'],
+        ['date', 'дата', '\d\d\d\d\.\d\d\.\d\d'],
+        ['time', 'время', '.{3,}'],
+        ['place', 'адрес', '.{3,}'],
+        ['program', 'программа', '.{3,}'],
+        ['cost', 'размер взноса', '.{3,}'],
+        ['chat', 'чат встречи', '.{3,}'],
+        ['materials', 'ссылка на архив материалов', '.{3,}'],
+    ]
+]
+
+EVENT_FIELD_BY_COMMAND = {e.command: e for e in EVENT_FIELDS}
+EVENT_FIELD_BY_INTENT = {e.intent: e for e in EVENT_FIELDS}
+
+EVENT_EDITION_COMMANDS = '\n'.join(
+    [""]
+    + ['{} - задать {}'.format(e.command, e.name_accs) for e in EVENT_FIELDS] +
+    [
+        "/remove_event - удалить событие и отменить все приглашения",
+        "/invite_everyone - пригласить всех членов клуба"
+])
+
+
+def format_event_description(event_dict):
+    result = 'Мероприятие:'
+    for field in EVENT_FIELDS:
+        if event_dict.get(field.code, '') != '':
+            result = result + '\n\t{}: \t{}'.format(field.name, event_dict.get(field.code))
+    result = result + '\n\tпиплбук встречи: <a href="{}{}">ссылка</a>\n'.format(
+        PEOPLEBOOK_EVENT_ROOT, event_dict.get('code')
+    )
+    return result
+
+
+def try_event_edition(ctx: Context, database: Database):
+    if not database.is_admin(ctx.user_object):
+        return ctx
+    event_code = ctx.user_object.get('event_code')
+    the_event = database.mongo_events.find_one({'code': event_code})
+    if event_code is None:
+        return ctx
+    if ctx.text in EVENT_FIELD_BY_COMMAND:
+        field: EventField = EVENT_FIELD_BY_COMMAND[ctx.text]
+        ctx.intent = field.intent
+        ctx.expected_intent = field.intent
+        ctx.response = 'Пожалуйста, введите {} мероприятия.'.format(field.name_accs)
+        ctx.suggests.append('Отменить редактирование события')
+    elif ctx.text == 'Отменить редактирование события':
+        ctx.intent = 'EVENT_EDIT_CANCEL'
+        ctx.response = 'Ладно\n\n' + render_full_event(ctx, database, the_event)
+    elif ctx.last_expected_intent in EVENT_FIELD_BY_INTENT:
+        field: EventField = EVENT_FIELD_BY_INTENT[ctx.last_expected_intent]
+        ctx.intent = ctx.last_expected_intent
+        if field.validate(ctx.text):
+            database.mongo_events.update_one({'code': event_code}, {'$set': {field.code: ctx.text}})
+            the_event = database.mongo_events.find_one({'code': event_code})
+            ctx.response = 'Вы успешно изменили {}!\n\n'.format(field.name_accs)
+            ctx.response = ctx.response + render_full_event(ctx, database, the_event)
+        else:
+            ctx.expected_intent = field.intent
+            ctx.response = 'Кажется, формат не подходит. Пожалуйста, введите {} ещё раз.'.format(field.name_accs)
+            ctx.suggests.append('Отменить редактирование')
+    elif ctx.text == '/remove_event':
+        ctx.intent = 'EVENT_REMOVE'
+        ctx.expected_intent = 'EVENT_REMOVE_CONFIRM'
+        ctx.response = 'Вы уверены, что хотите удалить событие "{}"? Это безвозвратно!'.format(the_event['title'])
+        ctx.suggests.extend(['Да', 'Нет'])
+    elif ctx.last_expected_intent == 'EVENT_REMOVE_CONFIRM':
+        if matchers.is_like_yes(ctx.text_normalized):
+            database.mongo_events.delete_one({'code': event_code})
+            ctx.the_update = {'$unset': {'event_code': ""}}
+            ctx.intent = 'EVENT_REMOVE_CONFIRM'
+            ctx.response = 'Хорошо. Событие "{}" было удалено.'.format(the_event['title'])
+        elif matchers.is_like_no(ctx.text_normalized):
+            ctx.intent = 'EVENT_REMOVE_NOT_CONFIRM'
+            ctx.response = 'Ладно, не буду удалять это событие.'
     return ctx

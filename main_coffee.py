@@ -10,7 +10,7 @@ import re
 from utils.database import Database
 from utils.dialogue_management import Context
 
-from events import try_invitation, try_event_usage, try_event_creation
+from events import try_invitation, try_event_usage, try_event_creation, try_event_edition
 from peoplebook import try_peoplebook_management
 from coffee import generate_good_pairs
 
@@ -253,6 +253,7 @@ def process_message(msg):
         try_peoplebook_management,
         try_coffee_management,
         try_membership_management,
+        try_event_edition,
         try_unauthorized_help
     ]:
         ctx = handler(ctx, database=database)

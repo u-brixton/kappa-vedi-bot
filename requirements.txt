@@ -3,3 +3,4 @@ psycopg2
 pytest
 flask
 pymongo==3.4.0
+pymorphy2
