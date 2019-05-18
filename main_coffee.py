@@ -12,9 +12,9 @@ from utils.dialogue_management import Context
 
 from events import try_invitation, try_event_usage, try_event_creation
 from peoplebook import try_peoplebook_management
+from coffee import generate_good_pairs
 
 from datetime import datetime
-from collections import defaultdict
 from flask import Flask, request
 from telebot import types
 
@@ -123,25 +123,21 @@ def wake_up():
     database = DATABASE
     web_hook()
     if datetime.today().weekday() == 5:  # on saturday, we recalculate the matches
-        active_users = database.mongo_users.find({'wants_next_coffee': True})
-        print('active users: {}'.format(active_users))
-        free_users = [user['username'] for user in active_users]
-        random.shuffle(free_users)
-        user_to_matches = defaultdict(list)
-        for i in range(0, len(free_users)-1, 2):
-            user_to_matches[free_users[i]] = [free_users[i + 1]]
-            user_to_matches[free_users[i + 1]] = [free_users[i]]
-        if len(free_users) % 2 == 1:
-            user_to_matches[free_users[0]].append(free_users[-1])
-            user_to_matches[free_users[-1]].append(free_users[0])
+        user_to_matches = generate_good_pairs(database)
         database.mongo_coffee_pairs.insert_one({'date': str(datetime.utcnow()), 'matches': user_to_matches})
 
     last_matches = database.mongo_coffee_pairs.find_one({}, sort=[('_id', pymongo.DESCENDING)])
+
     if last_matches is None:
         bot.send_message(71034798, 'я не нашёл матчей, посмотри логи плз')
     else:
-        bot.send_message(71034798, 'вот какие матчи сегодня: {}'.format(last_matches))
-        for username, matches in last_matches['matches'].items():
+        str_uid_to_username = {str(uo['tg_id']): uo['username'] for uo in database.mongo_users.find({})}
+        converted_matches = {
+            str_uid_to_username[key]: [str_uid_to_username[value] for value in values]
+            for key, values in last_matches.items()
+        }
+        bot.send_message(71034798, 'вот какие матчи сегодня: {}'.format(converted_matches))
+        for username, matches in converted_matches.items():
             user_obj = database.mongo_users.find_one({'username': username})
             if user_obj is None:
                 bot.send_message(71034798, 'юзер {} не был найден!'.format(username))

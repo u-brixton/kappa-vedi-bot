@@ -9,14 +9,14 @@ from datetime import datetime, timedelta
 PEOPLEBOOK_EVENT_ROOT = 'http://kv-peoplebook.herokuapp.com/event/'
 
 
-class INVITATION_STATUSES:
+class InvitationStatuses:
     NOT_SENT = 'NOT_SENT'
     ON_HOLD = 'ON_HOLD'
     ACCEPT = 'ACCEPT'
     REJECT = 'REJECT'
 
 
-class EVENT_INTENTS:
+class EventIntents:
     INVITE = 'INVITE'
     DID_NOT_PARSE = 'DID_NOT_PARSE'
     ON_HOLD = 'ON_HOLD'
@@ -37,8 +37,7 @@ def format_event_description(event_dict):
     ]:
         if event_dict.get(key, '') != '':
             result = result + '\n\t{}: \t{}'.format(title, event_dict.get(key))
-    # todo: compile the link to the peoplebook
-    result = result + '\n\tПиплбук встречи: <a href="{}{}">ссылка</a>\n'.format(
+    result = result + '\n\tпиплбук встречи: <a href="{}{}">ссылка</a>\n'.format(
         PEOPLEBOOK_EVENT_ROOT, event_dict.get('code')
     )
     return result
@@ -53,38 +52,38 @@ def make_invitation(invitation, database: Database):
     r = r + format_event_description(the_event)
     r = r + '\nВы сможете участвовать в этой встрече?'
     suggests = ['Да', 'Нет', 'Пока не знаю']
-    intent = EVENT_INTENTS.INVITE
+    intent = EventIntents.INVITE
     database.mongo_users.update_one({'username': invitation['username']}, {'$set': {'event_code': event_code}})
     return r, intent, suggests
 
 
 def try_invitation(ctx: Context, database: Database):
     deferred_invitation = database.mongo_participations.find_one(
-        {'username': ctx.username, 'status': INVITATION_STATUSES.NOT_SENT}
+        {'username': ctx.username, 'status': InvitationStatuses.NOT_SENT}
     )
-    if ctx.last_intent in {EVENT_INTENTS.INVITE, EVENT_INTENTS.DID_NOT_PARSE}:
+    if ctx.last_intent in {EventIntents.INVITE, EventIntents.DID_NOT_PARSE}:
         new_status = None
         event_code = ctx.user_object.get('event_code')
         if event_code is None:
             ctx.response = 'Почему-то не удалось получить код встречи, сообщите @cointegrated'
         elif matchers.is_like_yes(ctx.text_normalized):
-            new_status = INVITATION_STATUSES.ACCEPT
-            ctx.intent = EVENT_INTENTS.ACCEPT
+            new_status = InvitationStatuses.ACCEPT
+            ctx.intent = EventIntents.ACCEPT
             ctx.response = 'Ура! Я очень рад, что вы согласились прийти!'
             # todo: tell the details and remind about money and peoplebook
         elif matchers.is_like_no(ctx.text_normalized):
-            new_status = INVITATION_STATUSES.REJECT
-            ctx.intent = EVENT_INTENTS.REJECT
+            new_status = InvitationStatuses.REJECT
+            ctx.intent = EventIntents.REJECT
             ctx.response = 'Мне очень жаль, что у вас не получается. ' \
                            'Но, видимо, такова жизнь. Если вы есть, будте первыми!'
             # todo: ask why the user rejects it
         elif re.match('пока не знаю', ctx.text_normalized):
-            new_status = INVITATION_STATUSES.ON_HOLD
-            ctx.intent = EVENT_INTENTS.ON_HOLD
+            new_status = InvitationStatuses.ON_HOLD
+            ctx.intent = EventIntents.ON_HOLD
             ctx.response = 'Хорошо, я спрошу попозже ещё.'
             # todo: reask again
         else:
-            ctx.intent = EVENT_INTENTS.DID_NOT_PARSE
+            ctx.intent = EventIntents.DID_NOT_PARSE
             ctx.response = 'Я не понял. Ответьте, пожалуйста, на приглашение: "Да", "Нет", или "Пока не знаю".'
             ctx.suggests.extend(['Да', 'Нет', 'Пока не знаю'])
         if new_status is not None:
@@ -115,11 +114,11 @@ def try_event_usage(ctx: Context, database: Database):
                 ctx.response = ctx.response + '/{}: "{}", {}\n'.format(e['code'], e['title'], e['date'])
                 invitation = database.mongo_participations.find_one({'username': ctx.username, 'code': e['code']})
                 if (invitation is None or 'status' not in invitation
-                        or invitation['status'] == INVITATION_STATUSES.REJECT):
+                        or invitation['status'] == InvitationStatuses.REJECT):
                     status = 'Вы не участвуете'
-                elif invitation['status'] in {INVITATION_STATUSES.ON_HOLD, INVITATION_STATUSES.NOT_SENT}:
+                elif invitation['status'] in {InvitationStatuses.ON_HOLD, InvitationStatuses.NOT_SENT}:
                     status = 'Вы пока не решили, участвовать ли'
-                elif invitation['status'] == INVITATION_STATUSES.ACCEPT:
+                elif invitation['status'] == InvitationStatuses.ACCEPT:
                     status = 'Вы участвуете'
                 else:
                     status = 'Какой-то непонятный статус'
@@ -137,7 +136,7 @@ def try_event_usage(ctx: Context, database: Database):
             the_participation = database.mongo_participations.find_one(
                 {'username': ctx.user_object['username'], 'code': the_event['code']}
             )
-            if the_participation is None or the_participation.get('status') != INVITATION_STATUSES.ACCEPT:
+            if the_participation is None or the_participation.get('status') != InvitationStatuses.ACCEPT:
                 ctx.response = ctx.response + '\nВы не участвуете.\n /engage - участвовать'
             else:
                 ctx.response = ctx.response + '\nВы участвуете.\n /unengage - отказаться от участия'
@@ -154,7 +153,7 @@ def try_event_usage(ctx: Context, database: Database):
         else:
             database.mongo_participations.update_one(
                 {'username': ctx.user_object['username'], 'code': event_code},
-                {'$set': {'status': INVITATION_STATUSES.ACCEPT}}, upsert=True
+                {'$set': {'status': InvitationStatuses.ACCEPT}}, upsert=True
             )
             ctx.response = 'Теперь вы участвуете в мероприятии {}!'.format(event_code)
     elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and ctx.text == '/unengage':
@@ -165,7 +164,7 @@ def try_event_usage(ctx: Context, database: Database):
         else:
             database.mongo_participations.update_one(
                 {'username': ctx.user_object['username'], 'code': event_code},
-                {'$set': {'status': INVITATION_STATUSES.REJECT}}, upsert=True
+                {'$set': {'status': InvitationStatuses.REJECT}}, upsert=True
             )
             ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
     elif ctx.user_object.get('event_code') is not None and ctx.text == '/invite':
@@ -195,7 +194,7 @@ def try_event_usage(ctx: Context, database: Database):
                     )
                 database.mongo_participations.update_one(
                     {'username': the_login, 'code': event_code},
-                    {'$set': {'status': INVITATION_STATUSES.NOT_SENT, 'invitor': ctx.user_object['username']}},
+                    {'$set': {'status': InvitationStatuses.NOT_SENT, 'invitor': ctx.user_object['username']}},
                     upsert=True
                 )
                 r = 'Юзер @{} был добавлен в список участников встречи!'.format(the_login)
@@ -329,7 +328,7 @@ def try_event_creation(ctx: Context, database: Database):
                 else:
                     database.mongo_participations.update_one(
                         {'username': the_login, 'code': event_code},
-                        {'$set': {'status': INVITATION_STATUSES.ACCEPT, 'invitor': ctx.username}}, upsert=True
+                        {'$set': {'status': InvitationStatuses.ACCEPT, 'invitor': ctx.username}}, upsert=True
                     )
                     success = sent_invitation_to_user(
                         username=the_login, event_code=event_code, database=database, sender=ctx.sender
