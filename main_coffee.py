@@ -65,9 +65,9 @@ def try_sending_message(text, database, reply_to=None, user_id=None, suggests=No
     try:
         markup = render_markup(suggests)
         if user_id is not None:
-            bot.send_message(user_id, text, reply_markup=markup)
+            bot.send_message(user_id, text, reply_markup=markup, parse_mode='html')
         elif reply_to is not None:
-            bot.reply_to(reply_to, text, reply_markup=markup)
+            bot.reply_to(reply_to, text, reply_markup=markup, parse_mode='html')
         else:
             raise ValueError('user_id and reply_to were not provided')
         LoggedMessage(text=text, user_id=user_id, from_user=False, database=database).save()

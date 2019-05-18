@@ -6,6 +6,8 @@ import re
 
 from datetime import datetime, timedelta
 
+PEOPLEBOOK_EVENT_ROOT = 'http://kv-peoplebook.herokuapp.com/event/'
+
 
 class INVITATION_STATUSES:
     NOT_SENT = 'NOT_SENT'
@@ -33,10 +35,12 @@ def format_event_description(event_dict):
         ['cost', 'взнос'],
         ['chat', 'чат'],
     ]:
-        if key in event_dict:
+        if event_dict.get(key, '') != '':
             result = result + '\n\t{}: \t{}'.format(title, event_dict.get(key))
     # todo: compile the link to the peoplebook
-    result = result + '\n'
+    result = result + '\n\tПиплбук встречи: <a href="{}{}">ссылка</a>\n'.format(
+        PEOPLEBOOK_EVENT_ROOT, event_dict.get('code')
+    )
     return result
 
 
@@ -117,7 +121,7 @@ def try_event_usage(ctx: Context, database: Database):
         if the_event is not None:
             ctx.intent = 'EVENT_CHOOSE_SUCCESS'
             ctx.the_update = {'$set': {'event_code': event_code}}
-            ctx.response = 'Событие "{}" {}'.format(the_event['title'], the_event['date'])
+            ctx.response = format_event_description(the_event)
             # todo: check if the user participates
             the_participation = database.mongo_participations.find_one(
                 {'username': ctx.user_object['username'], 'code': the_event['code']}
@@ -127,11 +131,11 @@ def try_event_usage(ctx: Context, database: Database):
             else:
                 ctx.response = ctx.response + '\n /unengage - отказаться от участия'
                 ctx.response = ctx.response + '\n /invite - пригласить гостя'
-                # todo: add the option to invite everyone
-        else:
-            ctx.intent = 'EVENT_CHOOSE_FAIL'
-            ctx.response = 'Такое событие не найдено'
-    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and ctx.text == '/engage':
+                if database.is_admin(ctx.user_object):
+                    ctx.suggests.append('Пригласить всех членов клуба')
+    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and (
+            ctx.text == '/engage' or re.match('(участвовать|принять участие)', ctx.text_normalized)
+    ):
         ctx.intent = 'EVENT_ENGAGE'
         event_code = ctx.user_object.get('event_code')
         if event_code is None:
@@ -204,53 +208,110 @@ def sent_invitation_to_user(username, event_code, database: Database, sender):
         return False
 
 
+class EventCreationIntents:
+    INIT = 'EVENT_CREATE_INIT'
+    CANCEL = 'EVENT_CREATE_CANCEL'
+    SET_TITLE = 'EVENT_CREATE_SET_TITLE'
+    SET_CODE = 'EVENT_CREATE_SET_CODE'
+    SET_DATE = 'EVENT_CREATE_SET_DATE'
+
+
+def try_parse_date(text):
+    try:
+        return datetime.strptime(text, '%Y.%m.%d')
+    except Exception as e:
+        return None
+
+
 def try_event_creation(ctx: Context, database: Database):
     if not database.is_admin(ctx.user_object):
         return ctx
+    event_code = ctx.user_object.get('event_code')
     if re.match('созда(ть|й) встречу', ctx.text_normalized):
-        ctx.intent = 'EVENT_CREATE_INIT'
+        ctx.intent = EventCreationIntents.INIT
+        ctx.expected_intent = EventCreationIntents.SET_TITLE
         ctx.response = 'Придумайте название встречи (например, Встреча Каппа Веди 27 апреля):'
         ctx.the_update = {'$set': {'event_to_create': {}}}
-    elif ctx.last_intent == 'EVENT_CREATE_INIT':
-        ctx.intent = 'EVENT_CREATE_SET_TITLE'
-        event_to_create = ctx.user_object.get('event_to_create', {})
-        # todo: validate that event title is not empty and long enough
-        event_to_create['title'] = ctx.text
-        ctx.the_update = {'$set': {'event_to_create': event_to_create}}
-        ctx.response = (
-                'Хорошо, назовём встречу "{}".'.format(ctx.text)
-                + '\nТеперь придумайте название встречи из латинских букв и цифр '
-                + '(например, april2019):'
-        )
-    elif ctx.last_intent == 'EVENT_CREATE_SET_TITLE':
-        ctx.intent = 'EVENT_CREATE_SET_CODE'
-        event_to_create = ctx.user_object.get('event_to_create', {})
-        # todo: validate that event code is indeed alphanumeric
-        # todo: validate that event code is not equal to any of the reserved commands
-        event_to_create['code'] = ctx.text
-        ctx.the_update = {'$set': {'event_to_create': event_to_create}}
-        ctx.response = (
-                'Хорошо, код встречи будет "{}". '.format(ctx.text)
-                + '\nТеперь введите дату встречи в формате ГГГГ.ММ.ДД:'
-        )
-    elif ctx.last_intent == 'EVENT_CREATE_SET_CODE':
-        ctx.intent = 'EVENT_CREATE_SET_DATE'
-        event_to_create = ctx.user_object.get('event_to_create', {})
-        # todo: validate that event date is indeed yyyy.mm.dd
-        event_to_create['date'] = ctx.text
-        ctx.the_update = {'$set': {'event_to_create': event_to_create}}
-        ctx.response = 'Хорошо, дата встречи будет "{}". '.format(ctx.text) + '\nВстреча успешно создана!'
-        database.mongo_events.insert_one(event_to_create)
-        ctx.suggests.append('Пригласить всех членов клуба')
-    elif ctx.last_intent == 'EVENT_CREATE_SET_DATE':
-        if re.match('пригласить всех.*', ctx.text_normalized):
+        ctx.suggests.append('Отменить создание встречи')
+    elif re.match('отменить создание встречи', ctx.text_normalized):
+        ctx.intent = EventCreationIntents.CANCEL
+        ctx.response = 'Хорошо, пока не будем создавать встречу'
+    elif ctx.last_expected_intent == EventCreationIntents.SET_TITLE:
+        ctx.intent = EventCreationIntents.SET_TITLE
+        if len(ctx.text_normalized) < 3:
+            ctx.expected_intent = EventCreationIntents.SET_TITLE
+            ctx.response = 'Это название слишком странное. Пожалуйста, попробуйте другое.'
+        elif database.mongo_events.find_one({'title': ctx.text}) is not None:
+            ctx.expected_intent = EventCreationIntents.SET_TITLE
+            ctx.response = 'Такое название уже существует. Пожалуйста, попробуйте другое.'
+        else:
             event_to_create = ctx.user_object.get('event_to_create', {})
+            event_to_create['title'] = ctx.text
+            ctx.the_update = {'$set': {'event_to_create': event_to_create}}
+            ctx.response = (
+                'Хорошо, назовём встречу "{}".'.format(ctx.text)
+                + '\nТеперь придумайте код встречи из латинских букв и цифр '
+                + '(например, april2019):'
+            )
+            ctx.expected_intent = EventCreationIntents.SET_CODE
+        ctx.suggests.append('Отменить создание встречи')
+    elif ctx.last_expected_intent == EventCreationIntents.SET_CODE:
+        ctx.intent = EventCreationIntents.SET_CODE
+        if len(ctx.text) < 3:
+            ctx.expected_intent = EventCreationIntents.SET_CODE
+            ctx.response = 'Этот код слишком короткий. Пожалуйста, попробуйте другой.'
+        elif not re.match('^[a-z0-9_]+$', ctx.text):
+            ctx.expected_intent = EventCreationIntents.SET_CODE
+            ctx.response = 'Код должен состоять из цифр и латинских букв в нижнем регистре. ' \
+                           'Пожалуйста, попробуйте ещё раз.'
+        elif database.mongo_events.find_one({'code': ctx.text}) is not None:
+            ctx.expected_intent = EventCreationIntents.SET_CODE
+            ctx.response = 'Событие с таким кодом уже есть. Пожалуйста, придумайте другой код.'
+        else:
+            event_to_create = ctx.user_object.get('event_to_create', {})
+            event_to_create['code'] = ctx.text
+            ctx.the_update = {'$set': {'event_to_create': event_to_create}}
+            ctx.response = (
+                    'Хорошо, код встречи будет "{}". '.format(ctx.text)
+                    + '\nТеперь введите дату встречи в формате ГГГГ.ММ.ДД:'
+            )
+            ctx.expected_intent = EventCreationIntents.SET_DATE
+        ctx.suggests.append('Отменить создание встречи')
+    elif ctx.last_expected_intent == EventCreationIntents.SET_DATE:
+        ctx.intent = EventCreationIntents.SET_DATE
+        if not re.match('^20\d\d\.[01]\d\.[0123]\d$', ctx.text):
+            ctx.expected_intent = EventCreationIntents.SET_DATE
+            ctx.response = 'Дата должна быть в формате ГГГГ.ММ.ДД (типа 2020.03.05). Попробуйте ещё раз!'
+            ctx.suggests.append('Отменить создание встречи')
+        elif try_parse_date(ctx.text) is None:
+            ctx.expected_intent = EventCreationIntents.SET_DATE
+            ctx.response = 'Не получилось разобрать такую дату. Попробуйте, пожалуйста, ещё раз.'
+            ctx.suggests.append('Отменить создание встречи')
+        elif try_parse_date(ctx.text) + timedelta(days=1) < datetime.utcnow():
+            ctx.expected_intent = EventCreationIntents.SET_DATE
+            ctx.response = 'Кажется, эта дата уже в прошлом. Попробуйте, пожалуйста, ввести дату из будущего.'
+            ctx.suggests.append('Отменить создание встречи')
+        else:
+            event_to_create = ctx.user_object.get('event_to_create', {})
+            event_to_create['date'] = ctx.text
+            database.mongo_events.insert_one(event_to_create)
+            ctx.the_update = {'$set': {'event_code': event_to_create['code']}}
+            ctx.response = 'Хорошо, дата встречи будет "{}". '.format(ctx.text) + '\nВстреча успешно создана!'
+            ctx.suggests.append('Пригласить всех членов клуба')
+    elif event_code is not None:  # this event is context-independent, triggers at any time just by text
+        if re.match('пригласить (всех|весь).*', ctx.text_normalized):
             ctx.intent = 'INVITE_EVERYONE'
+            ctx.response = 'Действительно пригласить всех членов клуба на встречу {}?'.format(event_code)
+            ctx.suggests.extend(['Да', 'Нет'])
+        elif ctx.last_intent == 'INVITE_EVERYONE' and matchers.is_like_no(ctx.text_normalized):
+            ctx.intent = 'INVITE_EVERYONE_NOT_CONFIRM'
+            ctx.response = 'Ладно.'
+        elif ctx.last_intent == 'INVITE_EVERYONE' and matchers.is_like_yes(ctx.text_normalized):
+            ctx.intent = 'INVITE_EVERYONE_CONFIRM'
             r = 'Приглашаю всех членов клуба...\n'
             for member in database.mongo_membership.find({'is_member': True}):
-                # todo: deduplicate with single-member invitation
+                # todo: deduplicate the code with single-member invitation
                 the_login = member['username']
-                event_code = event_to_create['code']
                 the_invitation = database.mongo_participations.find_one({'username': the_login, 'code': event_code})
                 if the_invitation is not None:
                     status = 'приглашение уже было сделано'
