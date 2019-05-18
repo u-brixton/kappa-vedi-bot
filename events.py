@@ -113,6 +113,18 @@ def try_event_usage(ctx: Context, database: Database):
             ctx.response = 'Найдены предстоящие события:\n'
             for e in future_events:
                 ctx.response = ctx.response + '/{}: "{}", {}\n'.format(e['code'], e['title'], e['date'])
+                invitation = database.mongo_participations.find_one({'username': ctx.username, 'code': e['code']})
+                if (invitation is None or 'status' not in invitation
+                        or invitation['status'] == INVITATION_STATUSES.REJECT):
+                    status = 'Вы не участвуете'
+                elif invitation['status'] in {INVITATION_STATUSES.ON_HOLD, INVITATION_STATUSES.NOT_SENT}:
+                    status = 'Вы пока не решили, участвовать ли'
+                elif invitation['status'] == INVITATION_STATUSES.ACCEPT:
+                    status = 'Вы участвуете'
+                else:
+                    status = 'Какой-то непонятный статус'
+                ctx.response = ctx.response + '{}\n\n'.format(status)
+            ctx.response = ctx.response + 'Кликните по нужной ссылке, чтобы выбрать встречу.'
         else:
             ctx.response = 'Предстоящих событий не найдено'
     elif ctx.last_intent == 'EVENT_GET_LIST':
@@ -122,14 +134,13 @@ def try_event_usage(ctx: Context, database: Database):
             ctx.intent = 'EVENT_CHOOSE_SUCCESS'
             ctx.the_update = {'$set': {'event_code': event_code}}
             ctx.response = format_event_description(the_event)
-            # todo: check if the user participates
             the_participation = database.mongo_participations.find_one(
                 {'username': ctx.user_object['username'], 'code': the_event['code']}
             )
             if the_participation is None or the_participation.get('status') != INVITATION_STATUSES.ACCEPT:
-                ctx.response = ctx.response + '\n /engage - участвовать'
+                ctx.response = ctx.response + '\nВы не участвуете.\n /engage - участвовать'
             else:
-                ctx.response = ctx.response + '\n /unengage - отказаться от участия'
+                ctx.response = ctx.response + '\nВы участвуете.\n /unengage - отказаться от участия'
                 ctx.response = ctx.response + '\n /invite - пригласить гостя'
                 if database.is_admin(ctx.user_object):
                     ctx.suggests.append('Пригласить всех членов клуба')
