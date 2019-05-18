@@ -68,7 +68,10 @@ def try_sending_message(text, database, reply_to=None, user_id=None, suggests=No
             bot.send_message(user_id, text, reply_markup=markup)
         elif reply_to is not None:
             bot.reply_to(reply_to, text, reply_markup=markup)
+        else:
+            raise ValueError('user_id and reply_to were not provided')
         LoggedMessage(text=text, user_id=user_id, from_user=False, database=database).save()
+        return True
     except Exception as e:
         error = '\n'.join([
             'Ошибка при отправке сообщения!',
@@ -78,7 +81,7 @@ def try_sending_message(text, database, reply_to=None, user_id=None, suggests=No
             'error: {}'.format(e)
         ])
         bot.send_message(71034798, error)
-        raise e
+        return False
 
 
 def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):

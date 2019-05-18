@@ -108,7 +108,7 @@ def try_event_usage(ctx: Context, database: Database):
         if len(future_events) > 0:
             ctx.response = 'Найдены предстоящие события:\n'
             for e in future_events:
-                ctx.response = ctx.response + '/{}: "{}", {}'.format(e['code'], e['title'], e['date'])
+                ctx.response = ctx.response + '/{}: "{}", {}\n'.format(e['code'], e['title'], e['date'])
         else:
             ctx.response = 'Предстоящих событий не найдено'
     elif ctx.last_intent == 'EVENT_GET_LIST':
@@ -196,9 +196,9 @@ def try_event_usage(ctx: Context, database: Database):
 def sent_invitation_to_user(username, event_code, database: Database, sender):
     invitation = database.mongo_participations.find_one({'username': username, 'code': event_code})
     text, intent, suggests = make_invitation(invitation=invitation, database=database)
-    database.mongo_users.update_one({'username': username}, {'$set': {'last_intent': intent}})
     user_account = database.mongo_users.find_one({'username': username})
-    sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id'])
+    if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
+        database.mongo_users.update_one({'username': username}, {'$set': {'last_intent': intent}})
 
 
 def try_event_creation(ctx: Context, database: Database):
