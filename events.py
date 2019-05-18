@@ -76,7 +76,7 @@ def try_invitation(ctx: Context, database: Database):
             # todo: ask why the user rejects it
         elif ctx.text_normalized == 'пока не знаю':
             new_status = INVITATION_STATUSES.ON_HOLD
-            ctx.inent = EVENT_INTENTS.ON_HOLD
+            ctx.intent = EVENT_INTENTS.ON_HOLD
             ctx.response = 'Хорошо, я спрошу попозже ещё.'
             # todo: reask again
         else:
@@ -168,12 +168,13 @@ def try_event_usage(ctx: Context, database: Database):
             ctx.response = f.format(the_login)
         else:
             existing_membership = database.mongo_membership.find_one({'username': the_login})
-            is_newcomer = existing_membership is None
             existing_invitation = database.mongo_participations.find_one({'username': the_login, 'code': event_code})
             if existing_invitation is not None:
                 ctx.response = 'Пользователь @{} уже получал приглашение на эту встречу!'.format(the_login)
             else:
-                if is_newcomer:
+                user_account = database.mongo_users.find_one({'username': the_login})
+                never_used_this_bot = user_account is None
+                if existing_membership is None:
                     database.mongo_membership.update_one(
                         {'username': the_login}, {'$set': {'is_guest': True}}, upsert=True
                     )
@@ -183,15 +184,21 @@ def try_event_usage(ctx: Context, database: Database):
                     upsert=True
                 )
                 r = 'Юзер @{} был добавлен в список участников встречи!'.format(the_login)
-                if is_newcomer:
+                if never_used_this_bot:
                     r = r + '\nПередайте ему/ей ссылку на меня (@kappa_vedi_bot), ' \
                             'чтобы подтвердить участие и заполнить пиплбук (увы, бот не может писать первым).'
-                    # todo: send an invitation after first login
                 else:
-                    pass
-                    # todo: send an invitation immediately
+                    sent_invitation_to_user(the_login, event_code, database, ctx.sender)
                 ctx.response = r
     return ctx
+
+
+def sent_invitation_to_user(username, event_code, database: Database, sender):
+    invitation = database.mongo_participations.find_one({'username': username, 'code': event_code})
+    text, intent, suggests = make_invitation(invitation=invitation, database=database)
+    database.mongo_users.update_one({'username': username}, {'$set': {'last_intent': intent}})
+    user_account = database.mongo_users.find_one({'username': username})
+    sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id'])
 
 
 def try_event_creation(ctx: Context, database: Database):

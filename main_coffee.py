@@ -53,9 +53,21 @@ class LoggedMessage:
         }
 
 
-def try_sending_message(bot, text, database, reply_to=None, user_id=None):
+def render_markup(suggests=None):
+    if suggests is None:
+        return None
+    markup = types.ReplyKeyboardMarkup(row_width=max(1, min(3, int(len(suggests) / 2))))
+    markup.add(*suggests)
+    return markup
+
+
+def try_sending_message(text, database, reply_to=None, user_id=None, suggests=None):
     try:
-        bot.send_message(user_id, text)
+        markup = render_markup(suggests)
+        if user_id is not None:
+            bot.send_message(user_id, text, reply_markup=markup)
+        elif reply_to is not None:
+            bot.reply_to(reply_to, text, reply_markup=markup)
         LoggedMessage(text=text, user_id=user_id, from_user=False, database=database).save()
     except Exception as e:
         error = '\n'.join([
@@ -66,6 +78,7 @@ def try_sending_message(bot, text, database, reply_to=None, user_id=None):
             'error: {}'.format(e)
         ])
         bot.send_message(71034798, error)
+        raise e
 
 
 def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):
@@ -147,7 +160,7 @@ def remind_about_coffee(user_obj, matches, database: Database):
         response = 'На этой неделе вы, наверное, пили кофе {}.\nКак оно прошло?'.format(with_whom)
 
     if response is not None:
-        try_sending_message(bot=bot, user_id=user_id, text=response, database=database)
+        try_sending_message(user_id=user_id, text=response, database=database)
 
 
 TAKE_PART = 'Участвовать в следующем кофе'
@@ -231,7 +244,7 @@ def process_message(msg):
     uo = get_or_insert_user(msg.from_user, database=database)
     user_id = msg.chat.id
     LoggedMessage(text=msg.text, user_id=user_id, from_user=True, database=database).save()
-    ctx = Context(text=msg.text, user_object=uo)
+    ctx = Context(text=msg.text, user_object=uo, sender=try_sending_message)
 
     for handler in [
         try_queued_messages,
@@ -277,9 +290,7 @@ def process_message(msg):
         ctx.suggests.append('Создать встречу')
         ctx.suggests.append('Добавить членов')
 
-    markup = types.ReplyKeyboardMarkup(row_width=max(1, min(3, int(len(ctx.suggests) / 2))))
-    # todo: split suggests into rows with respect to their lengths
-    markup.add(*ctx.suggests)
+    markup = render_markup(ctx.suggests)
     LoggedMessage(text=ctx.response, user_id=user_id, from_user=False, database=database).save()
 
     bot.reply_to(msg, ctx.response, reply_markup=markup, parse_mode='html')
