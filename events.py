@@ -74,7 +74,7 @@ def try_invitation(ctx: Context, database: Database):
             ctx.response = 'Мне очень жаль, что у вас не получается. ' \
                            'Но, видимо, такова жизнь. Если вы есть, будте первыми!'
             # todo: ask why the user rejects it
-        elif ctx.text_normalized == 'пока не знаю':
+        elif re.match('пока не знаю', ctx.text_normalized):
             new_status = INVITATION_STATUSES.ON_HOLD
             ctx.intent = EVENT_INTENTS.ON_HOLD
             ctx.response = 'Хорошо, я спрошу попозже ещё.'
@@ -204,7 +204,7 @@ def sent_invitation_to_user(username, event_code, database: Database, sender):
 def try_event_creation(ctx: Context, database: Database):
     if not database.is_admin(ctx.user_object):
         return ctx
-    if ctx.text_normalized == 'созда(ть|й) встречу':
+    if re.match('созда(ть|й) встречу', ctx.text_normalized):
         ctx.intent = 'EVENT_CREATE_INIT'
         ctx.response = 'Придумайте название встречи (например, Встреча Каппа Веди 27 апреля):'
         ctx.the_update = {'$set': {'event_to_create': {}}}
