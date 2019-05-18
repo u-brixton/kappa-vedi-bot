@@ -134,7 +134,7 @@ def wake_up():
         str_uid_to_username = {str(uo['tg_id']): uo['username'] for uo in database.mongo_users.find({})}
         converted_matches = {
             str_uid_to_username[key]: [str_uid_to_username[value] for value in values]
-            for key, values in last_matches.items()
+            for key, values in last_matches['matches'].items()
         }
         bot.send_message(71034798, 'вот какие матчи сегодня: {}'.format(converted_matches))
         for username, matches in converted_matches.items():
