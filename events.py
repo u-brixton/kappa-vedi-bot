@@ -257,7 +257,7 @@ def try_event_creation(ctx: Context, database: Database):
                 else:
                     database.mongo_participations.update_one(
                         {'username': the_login, 'code': event_code},
-                        {'$set': {'status': INVITATION_STATUSES.ACCEPT}}, upsert=True
+                        {'$set': {'status': INVITATION_STATUSES.ACCEPT, 'invitor': ctx.username}}, upsert=True
                     )
                     success = sent_invitation_to_user(
                         username=the_login, event_code=event_code, database=database, sender=ctx.sender
