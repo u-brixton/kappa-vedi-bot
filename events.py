@@ -199,6 +199,9 @@ def sent_invitation_to_user(username, event_code, database: Database, sender):
     user_account = database.mongo_users.find_one({'username': username})
     if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
         database.mongo_users.update_one({'username': username}, {'$set': {'last_intent': intent}})
+        return True
+    else:
+        return False
 
 
 def try_event_creation(ctx: Context, database: Database):
@@ -238,5 +241,28 @@ def try_event_creation(ctx: Context, database: Database):
         ctx.the_update = {'$set': {'event_to_create': event_to_create}}
         ctx.response = 'Хорошо, дата встречи будет "{}". '.format(ctx.text) + '\nВстреча успешно создана!'
         database.mongo_events.insert_one(event_to_create)
-        # todo: propose sending invitations
+        ctx.suggests.append('Пригласить всех членов клуба')
+    elif ctx.last_intent == 'EVENT_CREATE_SET_DATE':
+        if re.match('пригласить всех.*', ctx.text_normalized):
+            event_to_create = ctx.user_object.get('event_to_create', {})
+            ctx.intent = 'INVITE_EVERYONE'
+            r = 'Приглашаю всех членов клуба...\n'
+            for member in database.mongo_membership.find({'is_member': True}):
+                # todo: deduplicate with single-member invitation
+                the_login = member['username']
+                event_code = event_to_create['code']
+                the_invitation = database.mongo_participations.find_one({'username': the_login, 'code': event_code})
+                if the_invitation is not None:
+                    status = 'приглашение уже было сделано'
+                else:
+                    database.mongo_participations.update_one(
+                        {'username': the_login, 'code': event_code},
+                        {'$set': {'status': INVITATION_STATUSES.ACCEPT}}, upsert=True
+                    )
+                    success = sent_invitation_to_user(
+                        username=the_login, event_code=event_code, database=database, sender=ctx.sender
+                    )
+                    status = 'успех' if success else 'не получилось'
+                r = r + '\n  @{}: {}'.format(member['username'], status)
+            ctx.response = r
     return ctx
