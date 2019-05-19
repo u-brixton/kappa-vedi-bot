@@ -34,6 +34,7 @@ class EventIntents:
     ON_HOLD = 'ON_HOLD'
     ACCEPT = 'ACCEPT'
     REJECT = 'REJECT'
+    NORMAL_REMINDER = 'NORMAL_REMINDER'
 
 
 def render_full_event(ctx: Context, database: Database, the_event):
@@ -509,6 +510,9 @@ def daily_event_management(database: Database, sender: Callable):
         not_sent_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': InvitationStatuses.NOT_SENT}
         )
+        sure_invitations = database.mongo_participations.find(
+            {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
+        )
         open_invitations = [
             inv for inv in (hold_invitations + not_sent_invitations)
             if inv['username'] in all_users  # if not, we just cannot send anything
@@ -528,3 +532,22 @@ def daily_event_management(database: Database, sender: Callable):
                 sent_invitation_to_user(
                     username=inv['username'], event_code=event['code'], database=database, sender=sender
                 )
+        if event['days_to'] in {0, 5}:
+            for invitation in sure_invitations:
+                user_account = database.mongo_users.find_one({'username': invitation['username']})
+                if user_account is None:
+                    continue
+                text = 'Здравствуйте, {}! Осталось всего {} дней до очередной встречи Каппа Веди\n'.format(
+                    user_account.get('first_name', 'товарищ ' + user_account.get('username', 'Анонимус')),
+                    event['days_to'] + 1
+                )
+                text = text + format_event_description(event)
+                text = text + '\nСоветую вам полистать пиплбук встречи заранее, чтобы нетворкаться на ней эффективнее.'
+                text = text + '\nЕсли вы есть, будьте первыми! \U0001f60e'
+                intent = EventIntents.NORMAL_REMINDER
+                suggests = []
+                if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
+                    database.mongo_users.update_one(
+                        {'username': invitation['username']},
+                        {'$set': {'last_intent': intent, 'event_code': invitation['code']}}
+                    )
