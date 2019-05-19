@@ -33,8 +33,8 @@ DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibek
 
 
 def render_markup(suggests=None, max_columns=3, initial_ratio=2):
-    if suggests is None:
-        return None
+    if suggests is None or len(suggests) == 0:
+        return types.ReplyKeyboardRemove(selective=False)
     markup = types.ReplyKeyboardMarkup(row_width=max(1, min(max_columns, int(len(suggests) / initial_ratio))))
     markup.add(*suggests)
     return markup
@@ -127,6 +127,7 @@ HELP_UNAUTHORIZED = """Привет! Я бот Каппа Веди.
 К сожалению, вас нет в списке знакомых мне пользователей.
 Если вы гость встречи, попросите кого-то из членов клуба сделать для вас приглашение в боте.
 Если вы член клуба, попросите Жонибека, Степана, Дашу, Альфию или Давида (@cointegrated) добавить вас в список членов.
+В любом случае для авторизации понадобится ваш уникальный юзернейм в Телеграме.
 Если вы есть, будьте первыми!"""
 
 
@@ -171,7 +172,16 @@ def try_membership_management(ctx: Context, database: Database):
 
 
 def try_coffee_management(ctx: Context, database: Database):
+    if not database.is_at_least_member(user_object=ctx.user_object):
+        return ctx
     if ctx.text == TAKE_PART:
+        if ctx.user_object.get('username') is None:
+            ctx.intent = 'COFFEE_NO_USERNAME'
+            ctx.response = 'Чтобы участвовать в random coffee, нужно иметь имя пользователя в Телеграме.' \
+                           '\nПожалуйста, создайте себе юзернейм (ТГ > настройки > изменить профиль > ' \
+                           'имя пользователя) и попробуйте снова.\nВ случае ошибки напишите @cointegrated.' \
+                           '\nЕсли вы есть, будьте первыми!'
+            return ctx
         ctx.the_update = {"$set": {'wants_next_coffee': True}}
         ctx.response = 'Окей, на следующей неделе вы будете участвовать в random coffee!'
         ctx.intent = 'TAKE_PART'

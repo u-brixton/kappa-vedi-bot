@@ -19,6 +19,7 @@ class PB:
     PEOPLEBOOK_SET_FINAL = 'PEOPLEBOOK_SET_FINAL'
     PEOPLEBOOK_SHOW_PROFILE = 'PEOPLEBOOK_SHOW_PROFILE'
     CREATING_PB_PROFILE = 'creating_pb_profile'
+    PEOPLEBOOK_NO_USERNAME = 'PEOPLEBOOK_NO_USERNAME'
 
 
 def try_peoplebook_management(ctx: Context, database: Database):
@@ -27,6 +28,13 @@ def try_peoplebook_management(ctx: Context, database: Database):
     # first process the incoming info
     within = ctx.user_object.get(PB.CREATING_PB_PROFILE)
     if re.match('(покажи )?(мой )?(профиль (в )?)?(пиплбук|peoplebook)', ctx.text_normalized):
+        if ctx.user_object.get('username') is None:
+            ctx.intent = PB.PEOPLEBOOK_NO_USERNAME
+            ctx.response = 'Чтобы пользоваться пиплбуком, нужно иметь имя пользователя в Телеграме.' \
+                           '\nПожалуйста, создайте себе юзернейм (ТГ > настройки > изменить профиль > ' \
+                           'имя пользователя) и попробуйте снова.\nВ случае ошибки напишите @cointegrated.' \
+                           '\nЕсли вы есть, будьте первыми!'
+            return ctx
         the_profile = database.mongo_peoplebook.find_one({'username': ctx.user_object['username']})
         if the_profile is None:
             ctx.intent = PB.PEOPLEBOOK_GET_FAIL

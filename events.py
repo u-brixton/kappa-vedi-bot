@@ -33,8 +33,9 @@ def render_full_event(ctx: Context, database: Database, the_event):
         response = response + '\nВы не участвуете.\n /engage - участвовать'
     else:
         response = response + '\nВы участвуете.\n /unengage - отказаться от участия'
-        response = response + '\n /invite - пригласить гостя'
-        if database.is_admin(ctx.user_object):
+        if database.is_at_least_member(user_object=ctx.user_object):
+            response = response + '\n /invite - пригласить гостя'
+        if database.is_admin(user_object=ctx.user_object):
             response = response + EVENT_EDITION_COMMANDS
     return response
 
@@ -172,8 +173,11 @@ def try_event_usage(ctx: Context, database: Database):
             ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
     elif ctx.user_object.get('event_code') is not None and ctx.text == '/invite':
         ctx.intent = 'EVENT_INVITE'
-        ctx.expected_intent = 'EVENT_INVITE_LOGIN'
-        ctx.response = 'Хорошо! Введите Telegram логин человека, которого хотите пригласить на встречу.'
+        if database.is_at_least_member(user_object=ctx.user_object):
+            ctx.expected_intent = 'EVENT_INVITE_LOGIN'
+            ctx.response = 'Хорошо! Введите Telegram логин человека, которого хотите пригласить на встречу.'
+        else:
+            ctx.response = 'Вы не являетесь членом клуба, и поэтому не можете приглашать гостей. Сорян.'
     elif ctx.last_expected_intent == 'EVENT_INVITE_LOGIN':
         ctx.intent = 'EVENT_INVITE_LOGIN'
         the_login = ctx.text.strip().strip('@').lower()

@@ -28,7 +28,7 @@ class Database:
         return self.is_member(user_object) or self.is_admin(user_object)
 
     def is_admin(self, user_object):
-        if user_object.get('username').lower() in self._admins:
+        if (user_object.get('username') or '').lower() in self._admins:
             return True
         return False
 
@@ -37,8 +37,8 @@ class Database:
         return existing is not None
 
     def is_guest(self, user_object):
-        # todo: lookup for the list of guests
-        return True
+        existing = self.mongo_participations.find_one({'username': user_object.get('username')})
+        return existing is not None
 
 
 class LoggedMessage:
