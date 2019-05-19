@@ -7,10 +7,12 @@ import pymongo
 import random
 import re
 
+from typing import Callable
+
 from utils.database import Database, LoggedMessage, get_or_insert_user
 from utils.dialogue_management import Context
 
-from events import try_invitation, try_event_usage, try_event_creation, try_event_edition
+from events import try_invitation, try_event_usage, try_event_creation, try_event_edition, daily_event_management
 from peoplebook import try_peoplebook_management
 from coffee import generate_good_pairs
 
@@ -72,9 +74,16 @@ def web_hook():
 
 @server.route("/wakeup/")
 def wake_up():
-    database = DATABASE
     web_hook()
+    # todo: catch exceptions
+    daily_random_coffee(database=DATABASE, sender=try_sending_message)
+    daily_event_management(database=DATABASE, sender=try_sending_message)
+    return "Маам, ну ещё пять минуточек!", 200
+
+
+def daily_random_coffee(database: Database, sender: Callable):
     if datetime.today().weekday() == 5:  # on saturday, we recalculate the matches
+        # todo: check the time since last recalculation, to avoid duplicates
         user_to_matches = generate_good_pairs(database)
         database.mongo_coffee_pairs.insert_one({'date': str(datetime.utcnow()), 'matches': user_to_matches})
 
@@ -94,11 +103,10 @@ def wake_up():
             if user_obj is None:
                 bot.send_message(71034798, 'юзер {} не был найден!'.format(username))
             else:
-                remind_about_coffee(user_obj, matches, database=database)
-    return "Маам, ну ещё пять минуточек!", 200
+                remind_about_coffee(user_obj, matches, database=database, sender=sender)
 
 
-def remind_about_coffee(user_obj, matches, database: Database):
+def remind_about_coffee(user_obj, matches, database: Database, sender: Callable):
     user_id = user_obj['tg_id']
     with_whom = 'с @{}'.format(matches[0])
     for next_match in matches[1:]:
@@ -114,7 +122,7 @@ def remind_about_coffee(user_obj, matches, database: Database):
             '\nНадеюсь, вы уже договорились о встрече?	\U0001f609' + \
             '\n(если в минувшую субботу пришло несколько оповещений о кофе, то действительно только последнее)'
     if response is not None:
-        try_sending_message(user_id=user_id, text=response, database=database)
+        sender(user_id=user_id, text=response, database=database)
 
 
 TAKE_PART = 'Участвовать в следующем кофе'

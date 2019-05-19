@@ -1,7 +1,9 @@
+from typing import Callable
+
 from utils.database import Database
 from utils.dialogue_management import Context
-
 from utils import matchers
+import random
 import re
 
 from datetime import datetime, timedelta
@@ -102,7 +104,6 @@ def try_invitation(ctx: Context, database: Database):
             new_status = InvitationStatuses.ON_HOLD
             ctx.intent = EventIntents.ON_HOLD
             ctx.response = 'Хорошо, я спрошу попозже ещё.'
-            # todo: reask again
         else:
             ctx.intent = EventIntents.DID_NOT_PARSE
             ctx.response = 'Я не понял. Ответьте, пожалуйста, на приглашение: "Да", "Нет", или "Пока не знаю".'
@@ -239,7 +240,7 @@ def try_event_usage(ctx: Context, database: Database):
     return ctx
 
 
-def sent_invitation_to_user(username, event_code, database: Database, sender):
+def sent_invitation_to_user(username, event_code, database: Database, sender: Callable):
     invitation = database.mongo_participations.find_one({'username': username, 'code': event_code})
     text, intent, suggests = make_invitation(invitation=invitation, database=database)
     user_account = database.mongo_users.find_one({'username': username})
@@ -489,3 +490,41 @@ def try_event_edition(ctx: Context, database: Database):
             ctx.intent = 'EVENT_REMOVE_NOT_CONFIRM'
             ctx.response = 'Ладно, не буду удалять это событие.'
     return ctx
+
+
+def daily_event_management(database: Database, sender: Callable):
+    all_users = {u['username']: u for u in database.mongo_users.find() if u['username'] is not None}
+    # find all the future events
+    future_events = []
+    for e in database.mongo_events.find({}):
+        days_to = (datetime.strptime('2019.05.25', '%Y.%m.%d') - datetime.utcnow()) / timedelta(days=1)
+        if days_to >= 0:
+            e['days_to'] = int(days_to)
+            future_events.append(e)
+    # find all open invitations for the future events
+    for event in future_events:
+        hold_invitations = database.mongo_participations.find(
+            {'code': event['code'], 'status': InvitationStatuses.ON_HOLD}
+        )
+        not_sent_invitations = database.mongo_participations.find(
+            {'code': event['code'], 'status': InvitationStatuses.NOT_SENT}
+        )
+        open_invitations = [
+            inv for inv in (hold_invitations + not_sent_invitations)
+            if inv['username'] in all_users  # if not, we just cannot send anything
+        ]
+        # for every open invitation, decide whether to remind (soon-ness -> reminder probability)
+        for inv in open_invitations:
+            if event['days_to'] > 7:
+                remind_probability = 0.1
+            elif event['days_to'] > 7:
+                remind_probability = 0.25
+            elif event['days_to'] > 3:
+                remind_probability = 0.5
+            else:
+                remind_probability = 1
+            if random.random() <= remind_probability:
+                # todo: make a custom header (with days to event)
+                sent_invitation_to_user(
+                    username=inv['username'], event_code=event['code'], database=database, sender=sender
+                )
