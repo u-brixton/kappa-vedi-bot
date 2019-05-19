@@ -1,8 +1,8 @@
+import random
+import re
 from utils.database import Database
 from utils.dialogue_management import Context
-
 from utils import matchers
-import re
 
 
 class PB:
@@ -90,18 +90,32 @@ def try_peoplebook_management(ctx: Context, database: Database):
             database.mongo_peoplebook.update_one(
                 {'username': ctx.user_object['username']}, {'$set': {'topics': ctx.text}}
             )
-            ctx.response = 'Интересненько.'
+            ctx.response = random.choice([
+                'Интересненько.',
+                'Хм, а с вами действительно есть о чём поговорить \U0001f60e',
+                'Отлично!'
+            ])
             ctx.expected_intent = PB.PEOPLEBOOK_SET_PHOTO if within else PB.PEOPLEBOOK_SHOW_PROFILE
         else:
             ctx.response = 'Попробуйте рассказать более развёрнуто.'
             ctx.expected_intent = PB.PEOPLEBOOK_SET_TOPICS
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
         ctx.intent = PB.PEOPLEBOOK_SET_PHOTO
-        # todo: validate the photo
+        if re.match('.+\.[a-z]{2,}/.+\.(jpg|jpeg|png)', ctx.text.strip()):
+            ctx.response = random.choice([
+                'Отлично! Мне нравится эта фотография.',
+                'Спасибо! Очень красивое фото.',
+                'Фото успешно добавлено! Кстати, вы тут хорошо выглядите.',
+                'Вау! А вы тут зачётно выглядите \U0001f60a'
+            ])
+        else:
+            ctx.response = 'Этот текст не очень похож на ссылку на фото.' \
+                           '\nПока что я запомню эту ссылку.' \
+                           '\nНо пожалуйста, проверьте потом, что фото нормально отображается на вашей страничке ПБ.' \
+                           '\nЖелательно проверить в инкогнито режиме браузера (фото может быть доступно только вам).'
         database.mongo_peoplebook.update_one(
             {'username': ctx.user_object['username']}, {'$set': {'photo': ctx.text.strip()}}
         )
-        ctx.response = 'Отлично'
         ctx.expected_intent = PB.PEOPLEBOOK_SET_CONTACTS if within else PB.PEOPLEBOOK_SHOW_PROFILE
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
         ctx.intent = PB.PEOPLEBOOK_SET_CONTACTS
@@ -131,7 +145,6 @@ def try_peoplebook_management(ctx: Context, database: Database):
                 ctx.expected_intent = v
                 ctx.intent = v
             break
-        # todo: parse the case with command + target text
     # then, prepare the response
     if ctx.expected_intent is not None:
         if ctx.response is None:
@@ -173,7 +186,7 @@ def render_text_profile(profile, editable=True):
         '{}'.format(profile.get('topics', '')),
         '<b>Контакты</b>',
         profile.get('contacts', 't.me/{}'.format(profile.get('username', ''))),
-        '<a href="kv-peoplebook.herokuapp.com/person/{}">как это выглядит на сайте</a>'.format(
+        '\n<a href="kv-peoplebook.herokuapp.com/person/{}">как это выглядит на сайте</a> (с фото)'.format(
             profile.get('username', 'does_not_exist')
         ),
     ]
@@ -182,7 +195,7 @@ def render_text_profile(profile, editable=True):
             '/set_pb_name     - редактировать имя',
             '/set_pb_surname  - редактировать фамилию',
             '/set_pb_activity - редактировать занятия',
-            '/set_pb_topics   - редактировать интересные темы',
+            '/set_pb_topics   - редактировать интересные вам темы',
             '/set_pb_photo    - редактировать фото',
             '/set_pb_contacts - редактировать контакты',
         ])
