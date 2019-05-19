@@ -127,13 +127,31 @@ def try_event_usage(ctx: Context, database: Database):
     event_code = ctx.user_object.get('event_code')
     if re.match('(най[тд]и|пока(жи|зать))( мои| все)? (встреч[уи]|событи[ея]|мероприяти[ея])', ctx.text_normalized):
         ctx.intent = 'EVENT_GET_LIST'
-        all_events = database.mongo_events.find({})
-        future_events = [
-            e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
-        ]
-        if len(future_events) > 0:
-            ctx.response = 'Найдены предстоящие события:\n'
-            for e in future_events:
+        all_events = list(database.mongo_events.find({}))
+        #future_events = [
+        #    e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
+        #]
+        # todo: filter future events if requested so
+        if database.is_at_least_member(user_object=ctx.user_object):
+            available_events = all_events
+        else:
+            available_events = [
+                c['the_event'][0] for c in database.mongo_participations.aggregate([
+                    {
+                        '$match': {'username': ctx.username}
+                    }, {
+                        '$lookup': {
+                            'from': 'events',
+                            'localField': 'code',
+                            'foreignField': 'code',
+                            'as': 'the_event'
+                        }
+                    }
+                ])
+            ]
+        if len(available_events) > 0:
+            ctx.response = 'Найдены события:\n'
+            for e in available_events:
                 ctx.response = ctx.response + '/{}: "{}", {}\n'.format(e['code'], e['title'], e['date'])
                 invitation = database.mongo_participations.find_one({'username': ctx.username, 'code': e['code']})
                 if (invitation is None or 'status' not in invitation
@@ -147,8 +165,10 @@ def try_event_usage(ctx: Context, database: Database):
                     status = 'Какой-то непонятный статус'
                 ctx.response = ctx.response + '{}\n\n'.format(status)
             ctx.response = ctx.response + 'Кликните по нужной ссылке, чтобы выбрать встречу.'
+        elif len(all_events) > 0:
+            ctx.response = 'Доступных вам событий не найдено.'
         else:
-            ctx.response = 'Предстоящих событий не найдено'
+            ctx.response = 'Событий не найдено'
     elif ctx.last_intent == 'EVENT_GET_LIST':
         event_code = ctx.text.lstrip('/')
         the_event = database.mongo_events.find_one({'code': event_code})
