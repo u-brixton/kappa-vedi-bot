@@ -15,6 +15,16 @@ class InvitationStatuses:
     ACCEPT = 'ACCEPT'
     REJECT = 'REJECT'
 
+    @classmethod
+    def translate(cls, status):
+        d = {
+            cls.NOT_SENT: 'приглашение пока не получено',
+            cls.ON_HOLD: 'пока определяется',
+            cls.ACCEPT: 'принял(а) приглашение',
+            cls.REJECT: 'отклонил(а) приглашение',
+        }
+        return d.get(status, 'какой-то непонятный статус')
+
 
 class EventIntents:
     INVITE = 'INVITE'
@@ -33,10 +43,10 @@ def render_full_event(ctx: Context, database: Database, the_event):
         response = response + '\nВы не участвуете.\n /engage - участвовать'
     else:
         response = response + '\nВы участвуете.\n /unengage - отказаться от участия'
-        if database.is_at_least_member(user_object=ctx.user_object):
-            response = response + '\n /invite - пригласить гостя'
-        if database.is_admin(user_object=ctx.user_object):
-            response = response + EVENT_EDITION_COMMANDS
+    if database.is_at_least_member(user_object=ctx.user_object):
+        response = response + '\n /invite - пригласить гостя'
+    if database.is_admin(user_object=ctx.user_object):
+        response = response + EVENT_EDITION_COMMANDS
     return response
 
 
@@ -114,6 +124,7 @@ def try_invitation(ctx: Context, database: Database):
 def try_event_usage(ctx: Context, database: Database):
     if not database.is_at_least_guest(ctx.user_object):
         return ctx
+    event_code = ctx.user_object.get('event_code')
     if re.match('(най[тд]и|пока(жи|зать))( мои| все)? (встреч[уи]|событи[ея]|мероприяти[ея])', ctx.text_normalized):
         ctx.intent = 'EVENT_GET_LIST'
         all_events = database.mongo_events.find({})
@@ -147,31 +158,25 @@ def try_event_usage(ctx: Context, database: Database):
             ctx.response = render_full_event(ctx, database, the_event)
             if database.is_admin(ctx.user_object):
                 ctx.suggests.append('Пригласить всех членов клуба')
-    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and (
+    elif event_code is not None and (
             ctx.text == '/engage' or re.match('(участвовать|принять участие)', ctx.text_normalized)
     ):
         ctx.intent = 'EVENT_ENGAGE'
-        event_code = ctx.user_object.get('event_code')
-        if event_code is None:
-            ctx.response = 'почему-то не удалось получить код события, сообщите @cointegrated'
-        else:
-            database.mongo_participations.update_one(
-                {'username': ctx.user_object['username'], 'code': event_code},
-                {'$set': {'status': InvitationStatuses.ACCEPT}}, upsert=True
-            )
-            ctx.response = 'Теперь вы участвуете в мероприятии {}!'.format(event_code)
-    elif ctx.last_intent == 'EVENT_CHOOSE_SUCCESS' and ctx.text == '/unengage':
+        database.mongo_participations.update_one(
+            {'username': ctx.user_object['username'], 'code': event_code},
+            {'$set': {'status': InvitationStatuses.ACCEPT}}, upsert=True
+        )
+        ctx.response = 'Теперь вы участвуете в мероприятии {}!'.format(event_code)
+    elif event_code is not None and (
+            ctx.text == '/unengage' or re.match('(не участвовать|покинуть встречу)', ctx.text_normalized)
+    ):
         ctx.intent = 'EVENT_UNENGAGE'
-        event_code = ctx.user_object.get('event_code')
-        if event_code is None:
-            ctx.response = 'почему-то не удалось получить код события, сообщите @cointegrated'
-        else:
-            database.mongo_participations.update_one(
-                {'username': ctx.user_object['username'], 'code': event_code},
-                {'$set': {'status': InvitationStatuses.REJECT}}, upsert=True
-            )
-            ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
-    elif ctx.user_object.get('event_code') is not None and ctx.text == '/invite':
+        database.mongo_participations.update_one(
+            {'username': ctx.user_object['username'], 'code': event_code},
+            {'$set': {'status': InvitationStatuses.REJECT}}, upsert=True
+        )
+        ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
+    elif event_code is not None and ctx.text == '/invite':
         ctx.intent = 'EVENT_INVITE'
         if database.is_at_least_member(user_object=ctx.user_object):
             ctx.expected_intent = 'EVENT_INVITE_LOGIN'
@@ -387,9 +392,12 @@ EVENT_FIELD_BY_INTENT = {e.intent: e for e in EVENT_FIELDS}
 
 EVENT_EDITION_COMMANDS = '\n'.join(
     [""]
-    + ['{} - задать {}'.format(e.command, e.name_accs) for e in EVENT_FIELDS] +
-    ["/remove_event - удалить событие и отменить все приглашения",
-     "/invite_everyone - пригласить всех членов клуба"]
+    + ['{} - задать {}'.format(e.command, e.name_accs) for e in EVENT_FIELDS]
+    + [
+        "/remove_event - удалить событие и отменить все приглашения",
+        "/invite_everyone - пригласить всех членов клуба",
+        "/invitation_statuses - посмотреть статусы приглашений"
+    ]
 )
 
 
@@ -432,6 +440,19 @@ def try_event_edition(ctx: Context, database: Database):
             ctx.expected_intent = field.intent
             ctx.response = 'Кажется, формат не подходит. Пожалуйста, введите {} ещё раз.'.format(field.name_accs)
             ctx.suggests.append('Отменить редактирование')
+    elif ctx.text == '/invitation_statuses':
+        ctx.intent = 'EVENT_GET_INVITATION_STATUSES'
+        event_members = list(database.mongo_participations.find({'code': event_code}))
+        if len(event_members) == 0:
+            ctx.response = 'Пока в этой встрече совсем нет участников. Если вы есть, будьте первыми!!!'
+        else:
+            statuses = '\n'.join([
+                '@{} - {}'.format(em['username'], InvitationStatuses.translate(em['status']))
+                + ('' if 'invitor' not in em else ' (гость @{})'.format(em['invitor']))
+                for em in event_members
+            ])
+            ctx.response = 'Вот какие статусы участников встречи {}\n{}'.format(event_code, statuses)
+        ctx.response = ctx.response + '\n\n' + render_full_event(ctx, database, the_event)
     elif ctx.text == '/remove_event':
         ctx.intent = 'EVENT_REMOVE'
         ctx.expected_intent = 'EVENT_REMOVE_CONFIRM'
