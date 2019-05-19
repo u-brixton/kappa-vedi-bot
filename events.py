@@ -66,7 +66,21 @@ def try_invitation(ctx: Context, database: Database):
             new_status = InvitationStatuses.ACCEPT
             ctx.intent = EventIntents.ACCEPT
             ctx.response = 'Ура! Я очень рад, что вы согласились прийти!'
-            # todo: tell the details and remind about money and peoplebook
+            the_peoplebook = database.mongo_peoplebook.find_one({'username': ctx.username})
+            if the_peoplebook is None:
+                t = '\nЧтобы встреча прошла продуктивнее, пожалуйста, заполните свою страничку в ' \
+                    + '<a href="{}{}">пиплбуке встречи</a>.'.format(PEOPLEBOOK_EVENT_ROOT, event_code) \
+                    + '\nДля этого, когда будете готовы, напишите мне "мой пиплбук"' \
+                    + ' и ответьте на пару вопросов о себе.'\
+                    + '\nЕсли вы есть, будьте первыми!'
+            else:
+                t = '\nВозможно, вы хотите обновить свою страничку в ' \
+                    + '<a href="{}{}">пиплбуке встречи</a>.'.format(PEOPLEBOOK_EVENT_ROOT, event_code) \
+                    + '\nДля этого, когда будете готовы, напишите мне "мой пиплбук"' \
+                    + ' и ответьте на пару вопросов о себе.' \
+                    + '\nЕсли вы есть, будьте первыми!'
+            ctx.response = ctx.response + t
+            # todo: tell the details and remind about money
         elif matchers.is_like_no(ctx.text_normalized):
             new_status = InvitationStatuses.REJECT
             ctx.intent = EventIntents.REJECT
@@ -92,6 +106,7 @@ def try_invitation(ctx: Context, database: Database):
         ctx.response = resp
         ctx.intent = intent
         ctx.suggests.extend(suggests)
+        ctx.the_update = {'$set': {'event_code': deferred_invitation.get('code')}}
     return ctx
 
 
@@ -200,7 +215,10 @@ def sent_invitation_to_user(username, event_code, database: Database, sender):
     text, intent, suggests = make_invitation(invitation=invitation, database=database)
     user_account = database.mongo_users.find_one({'username': username})
     if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
-        database.mongo_users.update_one({'username': username}, {'$set': {'last_intent': intent}})
+        database.mongo_users.update_one(
+            {'username': username},
+            {'$set': {'last_intent': intent, 'event_code': event_code}}
+        )
         return True
     else:
         return False
