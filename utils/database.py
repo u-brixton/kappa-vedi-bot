@@ -33,10 +33,13 @@ class Database:
         return False
 
     def is_member(self, user_object):
-        existing = self.mongo_membership.find_one({'username': user_object.get('username', ''), 'is_member': True})
+        username = user_object.get('username') or ''
+        username = username.lower()
+        existing = self.mongo_membership.find_one({'username': username, 'is_member': True})
         return existing is not None
 
     def is_guest(self, user_object):
+        # todo: check case of username here and everywhere
         existing = self.mongo_participations.find_one({'username': user_object.get('username')})
         return existing is not None
 
