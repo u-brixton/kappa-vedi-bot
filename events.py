@@ -243,8 +243,12 @@ def try_event_usage(ctx: Context, database: Database):
 
 def sent_invitation_to_user(username, event_code, database: Database, sender: Callable):
     invitation = database.mongo_participations.find_one({'username': username, 'code': event_code})
+    if invitation is None:
+        return False
     text, intent, suggests = make_invitation(invitation=invitation, database=database)
     user_account = database.mongo_users.find_one({'username': username})
+    if user_account is None:
+        return False
     if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
         database.mongo_users.update_one(
             {'username': username},
