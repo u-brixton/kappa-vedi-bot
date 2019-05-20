@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pymongo import MongoClient
 
+from . import matchers
+
 
 class Database:
     def __init__(self, mongo_url, admins=None):
@@ -75,8 +77,11 @@ def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):
     assert database is not None
     found = database.mongo_users.find_one({'tg_id': uid})
     if found is not None:
-        if tg_user is not None and found.get('username') != tg_user.username:
-            database.mongo_users.update_one({'tg_id': uid}, {'$set': {'username': tg_user.username}})
+        if tg_user is not None and found.get('username') != matchers.normalize_username(tg_user.username):
+            database.mongo_users.update_one(
+                {'tg_id': uid},
+                {'$set': {'username': matchers.normalize_username(tg_user.username)}}
+            )
             found = database.mongo_users.find_one({'tg_id': uid})
         return found
     if tg_user is None:

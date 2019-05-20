@@ -166,7 +166,7 @@ def try_membership_management(ctx: Context, database: Database):
         ctx.response = 'Введите телеграмовский логин/логины новых членов через пробел.'
     elif ctx.last_intent == 'MEMBER_ADD_INIT':
         ctx.intent = 'MEMBER_ADD_COMPLETE'
-        logins = [c.strip(',').strip('@').lower() for c in ctx.text.split()]
+        logins = [matchers.normalize_username(c.strip(',').strip('@').lower()) for c in ctx.text.split()]
         resp = 'Вот что получилось:'
         for login in logins:
             if not matchers.is_like_telegram_login(login):

@@ -20,3 +20,9 @@ def is_like_yes(text):
 
 def is_like_no(text):
     return bool(re.match('нет', text))
+
+
+def normalize_username(username):
+    if username is not None:
+        return username.lower().strip().strip('@')
+    return None
