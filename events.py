@@ -427,8 +427,8 @@ def format_event_description(event_dict):
     result = 'Мероприятие:'
     for field in EVENT_FIELDS:
         if event_dict.get(field.code, '') != '':
-            result = result + '\n\t{}: \t{}'.format(field.name, event_dict.get(field.code))
-    result = result + '\n\tпиплбук встречи: <a href="{}{}">ссылка</a>\n'.format(
+            result = result + '\n\t<b>{}</b>: \t{}'.format(field.name, event_dict.get(field.code))
+    result = result + '\n\t<b>пиплбук встречи</b>: <a href="{}{}">ссылка</a>\n'.format(
         PEOPLEBOOK_EVENT_ROOT, event_dict.get('code')
     )
     return result
