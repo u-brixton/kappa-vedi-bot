@@ -518,7 +518,7 @@ def daily_event_management(database: Database, sender: Callable):
             {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
         )
         open_invitations = [
-            inv for inv in (hold_invitations + not_sent_invitations)
+            inv for inv in (list(hold_invitations) + list(not_sent_invitations))
             if inv['username'] in all_users  # if not, we just cannot send anything
         ]
         # for every open invitation, decide whether to remind (soon-ness -> reminder probability)
