@@ -181,7 +181,7 @@ def try_event_usage(ctx: Context, database: Database):
             if database.is_admin(ctx.user_object):
                 ctx.suggests.append('Пригласить всех членов клуба')
     elif event_code is not None and (
-            ctx.text == '/engage' or re.match('^(участвовать|принять участие)(в этой встрече)$', ctx.text_normalized)
+            ctx.text == '/engage' or re.match('^(участвовать|принять участие)( в этой встрече)?$', ctx.text_normalized)
     ):
         ctx.intent = 'EVENT_ENGAGE'
         database.mongo_participations.update_one(
