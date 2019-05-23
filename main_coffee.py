@@ -6,6 +6,7 @@ import os
 import pymongo
 import random
 import re
+import sentry_sdk
 
 from typing import Callable
 
@@ -32,6 +33,9 @@ BASE_URL = 'https://kappa-vedi-bot.herokuapp.com/'
 
 MONGO_URL = os.environ.get('MONGODB_URI')
 DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'})
+
+if os.environ.get('SENTRY_DSN'):
+    sentry_sdk.init(os.environ.get('SENTRY_DSN'))
 
 
 def render_markup(suggests=None, max_columns=3, initial_ratio=2):
