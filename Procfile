@@ -1,1 +1,1 @@
-web: python main_coffee.py
+web: python main.py

@@ -12,6 +12,7 @@ from typing import Callable
 
 from utils.database import Database, LoggedMessage, get_or_insert_user
 from utils.dialogue_management import Context
+from utils.messaging import split_message
 
 from events import try_invitation, try_event_usage, try_event_creation, try_event_edition, daily_event_management
 from peoplebook import try_peoplebook_management
@@ -50,9 +51,11 @@ def try_sending_message(text, database, reply_to=None, user_id=None, suggests=No
     try:
         markup = render_markup(suggests)
         if user_id is not None:
-            bot.send_message(user_id, text, reply_markup=markup, parse_mode='html')
+            for chunk in split_message(text):
+                bot.send_message(user_id, chunk, reply_markup=markup, parse_mode='html')
         elif reply_to is not None:
-            bot.reply_to(reply_to, text, reply_markup=markup, parse_mode='html')
+            for chunk in split_message(text):
+                bot.reply_to(reply_to, chunk, reply_markup=markup, parse_mode='html')
         else:
             raise ValueError('user_id and reply_to were not provided')
         LoggedMessage(text=text, user_id=user_id, from_user=False, database=database).save()
@@ -60,7 +63,7 @@ def try_sending_message(text, database, reply_to=None, user_id=None, suggests=No
     except Exception as e:
         error = '\n'.join([
             'Ошибка при отправке сообщения!',
-            'Текст: {}'.format(text),
+            'Текст: {}'.format(text[:1000]),
             'user_id: {}'.format(user_id),
             'chat_id: {}'.format(reply_to.chat.username if reply_to is not None else None),
             'error: {}'.format(e)
@@ -267,10 +270,7 @@ def process_message(msg):
         ctx.suggests.append('Создать встречу')
         ctx.suggests.append('Добавить членов')
 
-    markup = render_markup(ctx.suggests)
-    LoggedMessage(text=ctx.response, user_id=user_id, from_user=False, database=database).save()
-
-    bot.reply_to(msg, ctx.response, reply_markup=markup, parse_mode='html')
+    try_sending_message(text=ctx.response, reply_to=msg, suggests=ctx.suggests, database=database)
 
 
 @server.route('/' + TELEBOT_URL + TOKEN, methods=['POST'])
