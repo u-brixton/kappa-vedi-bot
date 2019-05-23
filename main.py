@@ -23,6 +23,7 @@ from flask import Flask, request
 from telebot import types
 
 from utils import matchers
+from dog_mode import doggy_style
 
 ON_HEROKU = os.environ.get('ON_HEROKU')
 TOKEN = os.environ['TOKEN']
@@ -234,7 +235,8 @@ def process_message(msg):
         try_coffee_management,
         try_membership_management,
         try_event_edition,
-        try_unauthorized_help
+        try_unauthorized_help,
+        doggy_style
     ]:
         ctx = handler(ctx, database=database)
         if ctx.intent is not None:
