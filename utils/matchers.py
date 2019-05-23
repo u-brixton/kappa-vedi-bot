@@ -1,8 +1,9 @@
 import re
 import pymorphy2
+import yaml
 
 morph = pymorphy2.MorphAnalyzer()
-
+obscenities=yaml.safe_load('re_mat.yaml')
 
 def inflect_first_word(text, case):
     words = text.split()
@@ -26,3 +27,11 @@ def normalize_username(username):
     if username is not None:
         return username.lower().strip().strip('@')
     return None
+
+
+def is_obscene(text):
+    for word in text.split():
+        for pattern in obscenities:
+            if re.match(pattern, word):
+                return True
+    return False
