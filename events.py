@@ -99,7 +99,7 @@ def try_invitation(ctx: Context, database: Database):
             new_status = InvitationStatuses.REJECT
             ctx.intent = EventIntents.REJECT
             ctx.response = 'Мне очень жаль, что у вас не получается. ' \
-                           'Но, видимо, такова жизнь. Если вы есть, будте первыми!'
+                           'Но, видимо, такова жизнь. Если вы есть, будьте первыми!'
             # todo: ask why the user rejects it
         elif re.match('пока не знаю', ctx.text_normalized):
             new_status = InvitationStatuses.ON_HOLD
