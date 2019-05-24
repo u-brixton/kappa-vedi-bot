@@ -1,9 +1,12 @@
+import os
 import re
 import pymorphy2
 import yaml
 
 morph = pymorphy2.MorphAnalyzer()
-obscenities=yaml.safe_load('re_mat.yaml')
+with open(os.path.join(os.path.dirname(__file__), 're_mat.yaml'), 'r', encoding='utf-8') as f:
+    obscenities = yaml.safe_load(f)
+
 
 def inflect_first_word(text, case):
     words = text.split()
