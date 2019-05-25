@@ -130,9 +130,9 @@ def try_event_usage(ctx: Context, database: Database):
     if re.match('(най[тд]и|пока(жи|зать))( мои| все)? (встреч[уи]|событи[ея]|мероприяти[ея])', ctx.text_normalized):
         ctx.intent = 'EVENT_GET_LIST'
         all_events = list(database.mongo_events.find({}))
-        #future_events = [
-        #    e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
-        #]
+        # future_events = [
+        #     e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
+        # ]
         # todo: filter future events if requested so
         if database.is_at_least_member(user_object=ctx.user_object):
             available_events = all_events
@@ -156,8 +156,8 @@ def try_event_usage(ctx: Context, database: Database):
             for e in available_events:
                 ctx.response = ctx.response + '/{}: "{}", {}\n'.format(e['code'], e['title'], e['date'])
                 invitation = database.mongo_participations.find_one({'username': ctx.username, 'code': e['code']})
-                if (invitation is None or 'status' not in invitation
-                        or invitation['status'] == InvitationStatuses.REJECT):
+                if (invitation is None or 'status' not in invitation or
+                        invitation['status'] == InvitationStatuses.REJECT):
                     status = 'Вы не участвуете'
                 elif invitation['status'] in {InvitationStatuses.ON_HOLD, InvitationStatuses.NOT_SENT}:
                     status = 'Вы пока не решили, участвовать ли'
@@ -302,9 +302,9 @@ def try_event_creation(ctx: Context, database: Database):
             event_to_create['title'] = ctx.text
             ctx.the_update = {'$set': {'event_to_create': event_to_create}}
             ctx.response = (
-                'Хорошо, назовём встречу "{}".'.format(ctx.text)
-                + '\nТеперь придумайте код встречи из латинских букв и цифр '
-                + '(например, april2019):'
+                'Хорошо, назовём встречу "{}".'.format(ctx.text) +
+                '\nТеперь придумайте код встречи из латинских букв и цифр ' +
+                '(например, april2019):'
             )
             ctx.expected_intent = EventCreationIntents.SET_CODE
         ctx.suggests.append('Отменить создание встречи')
@@ -325,8 +325,8 @@ def try_event_creation(ctx: Context, database: Database):
             event_to_create['code'] = ctx.text
             ctx.the_update = {'$set': {'event_to_create': event_to_create}}
             ctx.response = (
-                    'Хорошо, код встречи будет "{}". '.format(ctx.text)
-                    + '\nТеперь введите дату встречи в формате ГГГГ.ММ.ДД:'
+                    'Хорошо, код встречи будет "{}". '.format(ctx.text) +
+                    '\nТеперь введите дату встречи в формате ГГГГ.ММ.ДД:'
             )
             ctx.expected_intent = EventCreationIntents.SET_DATE
         ctx.suggests.append('Отменить создание встречи')
@@ -417,9 +417,9 @@ EVENT_FIELD_BY_COMMAND = {e.command: e for e in EVENT_FIELDS}
 EVENT_FIELD_BY_INTENT = {e.intent: e for e in EVENT_FIELDS}
 
 EVENT_EDITION_COMMANDS = '\n'.join(
-    [""]
-    + ['{} - задать {}'.format(e.command, e.name_accs) for e in EVENT_FIELDS]
-    + [
+    [""] +
+    ['{} - задать {}'.format(e.command, e.name_accs) for e in EVENT_FIELDS] +
+    [
         "/remove_event - удалить событие и отменить все приглашения",
         "/invite_everyone - пригласить всех членов клуба",
         "/invitation_statuses - посмотреть статусы приглашений"
@@ -446,7 +446,7 @@ def try_event_edition(ctx: Context, database: Database):
     if event_code is None:
         return ctx
     if ctx.text in EVENT_FIELD_BY_COMMAND:
-        field: EventField = EVENT_FIELD_BY_COMMAND[ctx.text]
+        field = EVENT_FIELD_BY_COMMAND[ctx.text]
         ctx.intent = field.intent
         ctx.expected_intent = field.intent
         ctx.response = 'Пожалуйста, введите {} мероприятия.'.format(field.name_accs)
@@ -455,7 +455,7 @@ def try_event_edition(ctx: Context, database: Database):
         ctx.intent = 'EVENT_EDIT_CANCEL'
         ctx.response = 'Ладно\n\n' + render_full_event(ctx, database, the_event)
     elif ctx.last_expected_intent in EVENT_FIELD_BY_INTENT:
-        field: EventField = EVENT_FIELD_BY_INTENT[ctx.last_expected_intent]
+        field = EVENT_FIELD_BY_INTENT[ctx.last_expected_intent]
         ctx.intent = ctx.last_expected_intent
         if field.validate(ctx.text):
             database.mongo_events.update_one({'code': event_code}, {'$set': {field.code: ctx.text}})
@@ -473,8 +473,8 @@ def try_event_edition(ctx: Context, database: Database):
             ctx.response = 'Пока в этой встрече совсем нет участников. Если вы есть, будьте первыми!!!'
         else:
             statuses = '\n'.join([
-                '@{} - {}'.format(em['username'], InvitationStatuses.translate(em['status']))
-                + ('' if 'invitor' not in em else ' (гость @{})'.format(em['invitor']))
+                '@{} - {}'.format(em['username'], InvitationStatuses.translate(em['status'])) +
+                ('' if 'invitor' not in em else ' (гость @{})'.format(em['invitor']))
                 for em in event_members
             ])
             ctx.response = 'Вот какие статусы участников встречи {}\n{}'.format(event_code, statuses)
