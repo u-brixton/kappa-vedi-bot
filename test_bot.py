@@ -44,6 +44,7 @@ def mocked_db():
     db.mongo_membership.insert_one({'username': 'a_member', 'is_member': True})
     return db
 
+
 @pytest.fixture()
 def mocked_sender():
     return MockedSender()
