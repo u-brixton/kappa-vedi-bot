@@ -16,7 +16,9 @@ def respond(message, database: Database, sender: BaseSender):
     # todo: make it less dependent on telebot Message class structure
     uo = get_or_insert_user(message.from_user, database=database)
     user_id = message.chat.id
-    LoggedMessage(text=message.text, user_id=user_id, from_user=True, database=database).save()
+    LoggedMessage(
+        text=message.text, user_id=user_id, from_user=True, database=database, username=uo.get('username')
+    ).save()
     ctx = Context(text=message.text, user_object=uo, sender=sender)
 
     for handler in [

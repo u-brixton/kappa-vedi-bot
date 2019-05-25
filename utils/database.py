@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pymongo import MongoClient
 
-from . import matchers
+from utils import matchers
 
 
 class Database:
@@ -52,11 +52,14 @@ class Database:
 
 
 class LoggedMessage:
-    def __init__(self, text, user_id, from_user, database: Database):
+    def __init__(self, text, user_id, from_user, database: Database, username=None, intent=None, meta=None):
         self.text = text
         self.user_id = user_id
         self.from_user = from_user
         self.timestamp = str(datetime.utcnow())
+        self.username = username
+        self.intent = intent
+        self.meta = meta
 
         self.mongo_collection = database.mongo_messages
 
@@ -64,12 +67,19 @@ class LoggedMessage:
         self.mongo_collection.insert_one(self.to_dict())
 
     def to_dict(self):
-        return {
+        result = {
             'text': self.text,
             'user_id': self.user_id,
             'from_user': self.from_user,
             'timestamp': self.timestamp
         }
+        if self.username is not None:
+            result['username'] = matchers.normalize_username(self.username)
+        if self.intent is not None:
+            result['intent'] = self.intent
+        if self.meta is not None:
+            result['meta'] = self.meta
+        return result
 
 
 def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):

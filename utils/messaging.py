@@ -1,6 +1,7 @@
 from utils.telegram import render_markup
 from utils.database import LoggedMessage
 
+
 MAX_LEN = 4000
 MESSAGE_SEPARATOR = '<NEW_MESSAGE>'
 
@@ -54,7 +55,8 @@ class TelegramSender(BaseSender):
             text, database, reply_to=None, user_id=None, suggests=None,
             notify_on_error=True,
             intent=None,
-            meta=None
+            meta=None,
+            username=None
     ):
         try:
             markup = render_markup(suggests)
@@ -64,9 +66,15 @@ class TelegramSender(BaseSender):
             elif reply_to is not None:
                 for chunk in split_message(text):
                     self.bot.reply_to(reply_to, chunk, reply_markup=markup, parse_mode='html')
+                user_id = reply_to.from_user.id
+                if username is None:
+                    username = reply_to.from_user.username
             else:
                 raise ValueError('user_id and reply_to were not provided')
-            LoggedMessage(text=text, user_id=user_id, from_user=False, database=database).save()
+            LoggedMessage(
+                text=text, user_id=user_id, from_user=False, database=database,
+                intent=intent, meta=meta, username=username
+            ).save()
             # todo: actually save intent and meta
             return True
         except Exception as e:
