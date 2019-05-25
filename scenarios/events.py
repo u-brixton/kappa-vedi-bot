@@ -16,6 +16,8 @@ class InvitationStatuses:
     ON_HOLD = 'ON_HOLD'
     ACCEPT = 'ACCEPT'
     REJECT = 'REJECT'
+    ON_HOLD_OVERDUE = 'ON_HOLD_OVERDUE'
+    NOT_SENT_OVERDUE = 'NOT_SENT_OVERDUE'
 
     @classmethod
     def translate(cls, status):
@@ -24,6 +26,8 @@ class InvitationStatuses:
             cls.ON_HOLD: 'пока определяется',
             cls.ACCEPT: 'принял(а) приглашение',
             cls.REJECT: 'отклонил(а) приглашение',
+            cls.ON_HOLD_OVERDUE: 'так и не определил(ся|ась)',
+            cls.NOT_SENT_OVERDUE: 'так и не получил(а) приглашение'
         }
         return d.get(status, 'какой-то непонятный статус')
 
@@ -37,16 +41,25 @@ class EventIntents:
     NORMAL_REMINDER = 'NORMAL_REMINDER'
 
 
+def is_future_event(event, may_be_today=True):
+    return datetime.strptime(event['date'], '%Y.%m.%d') + timedelta(days=bool(may_be_today)) > datetime.utcnow()
+
+
 def render_full_event(ctx: Context, database: Database, the_event):
     response = format_event_description(the_event)
     the_participation = database.mongo_participations.find_one(
         {'username': ctx.user_object['username'], 'code': the_event['code']}
     )
+    is_future = is_future_event(the_event)
     if the_participation is None or the_participation.get('status') != InvitationStatuses.ACCEPT:
-        response = response + '\nВы не участвуете.\n /engage - участвовать'
+        response = response + '\nВы не участвуете.'
+        if is_future:
+            response = response + '\n /engage - участвовать'
     else:
-        response = response + '\nВы участвуете.\n /unengage - отказаться от участия'
-    if database.is_at_least_member(user_object=ctx.user_object):
+        response = response + '\nВы участвуете.'
+        if is_future:
+            response = response + '\n /unengage - отказаться от участия'
+    if database.is_at_least_member(user_object=ctx.user_object) and is_future:
         response = response + '\n /invite - пригласить гостя'
     if database.is_admin(user_object=ctx.user_object):
         response = response + EVENT_EDITION_COMMANDS
@@ -131,7 +144,7 @@ def try_event_usage(ctx: Context, database: Database):
         ctx.intent = 'EVENT_GET_LIST'
         all_events = list(database.mongo_events.find({}))
         # future_events = [
-        #     e for e in all_events if datetime.strptime(e['date'], '%Y.%m.%d') + timedelta(days=1) > datetime.utcnow()
+        #     e for e in all_events if is_future_event(e)
         # ]
         # todo: filter future events if requested so
         if database.is_at_least_member(user_object=ctx.user_object):
@@ -157,7 +170,8 @@ def try_event_usage(ctx: Context, database: Database):
                 ctx.response = ctx.response + '/{}: "{}", {}\n'.format(e['code'], e['title'], e['date'])
                 invitation = database.mongo_participations.find_one({'username': ctx.username, 'code': e['code']})
                 if (invitation is None or 'status' not in invitation or
-                        invitation['status'] == InvitationStatuses.REJECT):
+                        invitation['status'] in {InvitationStatuses.REJECT, InvitationStatuses.NOT_SENT_OVERDUE,
+                                                 InvitationStatuses.ON_HOLD_OVERDUE}):
                     status = 'Вы не участвуете'
                 elif invitation['status'] in {InvitationStatuses.ON_HOLD, InvitationStatuses.NOT_SENT}:
                     status = 'Вы пока не решили, участвовать ли'
@@ -198,13 +212,26 @@ def try_event_usage(ctx: Context, database: Database):
             {'$set': {'status': InvitationStatuses.REJECT}}, upsert=True
         )
         ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
-    elif event_code is not None and ctx.text == '/invite':
-        ctx.intent = 'EVENT_INVITE'
-        if database.is_at_least_member(user_object=ctx.user_object):
-            ctx.expected_intent = 'EVENT_INVITE_LOGIN'
-            ctx.response = 'Хорошо! Введите Telegram логин человека, которого хотите пригласить на встречу.'
+    elif ctx.text == '/invite':
+        if event_code is None:
+            ctx.intent = 'EVENT_INVITE_WITHOUT_EVENT'
+            ctx.response = 'Чтобы пригласить гостя, сначала нужно выбрать встречу'
+        elif database.is_at_least_member(user_object=ctx.user_object):
+            the_event = database.mongo_events.find_one({'code': event_code})
+            if the_event is None:
+                ctx.intent = 'EVENT_INVITE_NOT_FOUND'
+                ctx.response = 'Извините, события "{}" не найдено. Выберите другое.'.format(event_code)
+            elif not is_future_event(the_event):
+                ctx.intent = 'EVENT_INVITE_IN_THE_PAST'
+                ctx.response = 'Событие "{}" уже состоялось, вы не можете приглашать гостей.'.format(event_code)
+            else:
+                ctx.intent = 'EVENT_INVITE'
+                ctx.expected_intent = 'EVENT_INVITE_LOGIN'
+                ctx.response = 'Хорошо! Сейчас пригласим гостя на встречу "{}".'.format(event_code)
+                ctx.response = ctx.response + '\nВведите Telegram логин человека, которого хотите пригласить.'
         else:
             ctx.response = 'Вы не являетесь членом клуба, и поэтому не можете приглашать гостей. Сорян.'
+            ctx.intent = 'EVENT_INVITE_UNAUTHORIZED'
     elif ctx.last_expected_intent == 'EVENT_INVITE_LOGIN':
         ctx.intent = 'EVENT_INVITE_LOGIN'
         the_login = ctx.text.strip().strip('@').lower()
@@ -353,9 +380,18 @@ def try_event_creation(ctx: Context, database: Database):
             ctx.suggests.append('Пригласить всех членов клуба')
     elif event_code is not None:  # this event is context-independent, triggers at any time just by text
         if re.match('пригласить (всех|весь).*', ctx.text_normalized) or ctx.text == '/invite_everyone':
-            ctx.intent = 'INVITE_EVERYONE'
-            ctx.response = 'Действительно пригласить всех членов клуба на встречу {}?'.format(event_code)
-            ctx.suggests.extend(['Да', 'Нет'])
+            # todo: deduplicate this as well
+            the_event = database.mongo_events.find_one({'code': event_code})
+            if the_event is None:
+                ctx.intent = 'EVENT_INVITE_NOT_FOUND'
+                ctx.response = 'Извините, события "{}" не найдено. Выберите другое.'.format(event_code)
+            elif not is_future_event(the_event):
+                ctx.intent = 'EVENT_INVITE_IN_THE_PAST'
+                ctx.response = 'Событие "{}" уже состоялось, вы не можете приглашать гостей.'.format(event_code)
+            else:
+                ctx.intent = 'INVITE_EVERYONE'
+                ctx.response = 'Действительно пригласить всех членов клуба на встречу "{}"?'.format(event_code)
+                ctx.suggests.extend(['Да', 'Нет'])
         elif ctx.last_intent == 'INVITE_EVERYONE' and matchers.is_like_no(ctx.text_normalized):
             ctx.intent = 'INVITE_EVERYONE_NOT_CONFIRM'
             ctx.response = 'Ладно.'
@@ -501,12 +537,15 @@ def daily_event_management(database: Database, sender: Callable):
     all_users = {u['username']: u for u in database.mongo_users.find() if u['username'] is not None}
     # find all the future events
     future_events = []
+    today_events = []
     yesterday_events = []
     for e in database.mongo_events.find({}):
         days_to = (datetime.strptime('2019.05.25', '%Y.%m.%d') - datetime.utcnow()) / timedelta(days=1)
         if days_to >= 0:
             e['days_to'] = int(days_to)
             future_events.append(e)
+        elif -1 < days_to < 0:
+            today_events.append(e)
         elif -2 < days_to < -1:
             yesterday_events.append(e)
     # find all open invitations for the future events
@@ -577,3 +616,15 @@ def daily_event_management(database: Database, sender: Callable):
                    "по ссылке http://bit.ly/welcome2kv. Мы рассмотрим её на ближайшей оргвстрече клуба.\n" \
                    "Спасибо за участие во встрече клуба. Если вы есть, будьте первыми!"
             sender(text=text, database=database, user_id=user_account['tg_id'])
+        undecided_invitations = database.mongo_participations.find(
+            {'code': event['code'], 'status': {'$in': [InvitationStatuses.NOT_SENT, InvitationStatuses.ON_HOLD]}}
+        )
+        for invitation in undecided_invitations:
+            database.mongo_participations.update_one(
+                {'_id': invitation['_id']},
+                {'$set': {
+                    'status': InvitationStatuses.ON_HOLD_OVERDUE
+                    if event['status'] == InvitationStatuses.ON_HOLD
+                    else InvitationStatuses.NOT_SENT_OVERDUE
+                }}
+            )
