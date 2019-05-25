@@ -22,6 +22,15 @@ class PB:
     PEOPLEBOOK_NO_USERNAME = 'PEOPLEBOOK_NO_USERNAME'
 
 
+PHOTO_INSTRUCTION = 'Важно, чтобы лицо было хорошо видно. ' \
+                    '\nСсылка должна быть не на страничку с фото, а на сам файл ' \
+                    '(т.е. должна расширение типа .png, .jpg и т.п. в конце ссылки).' \
+                    '\nЕсли у вас нет ссылки, можно загрузить фото, например, на vfl.ru. ' \
+                    'Потом оттуда надо будет скопировать ПРЯМУЮ ссылку (последнее окошко).' \
+                    '\nЕщё можно взять ссылку из соцсети: кликнуть правой кнопкой по фото на вашей страничке,' \
+                    ' выбрать "Копировать адрес изображения", и прислать скопированное мне.'
+
+
 def try_peoplebook_management(ctx: Context, database: Database):
     if not database.is_at_least_guest(ctx.user_object):
         return ctx
@@ -121,6 +130,7 @@ def try_peoplebook_management(ctx: Context, database: Database):
                            '\nПока что я запомню эту ссылку.' \
                            '\nНо пожалуйста, проверьте потом, что фото нормально отображается на вашей страничке ПБ.' \
                            '\nЖелательно проверить в инкогнито режиме браузера (фото может быть доступно только вам).'
+            ctx.response = ctx.response + '\nКак загружать фото:\n' + PHOTO_INSTRUCTION + '\n\n'
         database.mongo_peoplebook.update_one(
             {'username': ctx.user_object['username']}, {'$set': {'photo': ctx.text.strip()}}
         )
@@ -169,11 +179,8 @@ def try_peoplebook_management(ctx: Context, database: Database):
         ctx.response = ctx.response + '\nПро что вас можно расспросить, о чём вы знаете больше других? ' \
                                       'Это могут быть города, хобби, мероприятия, необычный опыт.'
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
-        ctx.response = ctx.response + '\nДайте ссылку на фото, по которому вас проще всего будет найти. ' \
-                                      'Важно, чтобы лицо было хорошо видно. ' \
-                                      '\nСсылка должна быть не на страничку с фото, а на файл ' \
-                                      '(с расширением типа .png, .jpg и т.п. в конце ссылки).' \
-                                      '\nЕсли у вас нет ссылки, можно загрузить фото, например, на vfl.ru.'
+        ctx.response = ctx.response + '\nДайте ссылку на фото, по которому вас проще всего будет найти. '
+        ctx.response = ctx.response + PHOTO_INSTRUCTION
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
         ctx.response = ctx.response + '\nЕсли хотите, можете оставить контакты в соцсетях: ' \
                                       'телеграм, инстаграм, линкедин, фб, вк, почта.'
