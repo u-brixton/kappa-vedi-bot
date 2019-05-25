@@ -7,12 +7,15 @@ from . import matchers
 
 class Database:
     def __init__(self, mongo_url, admins=None):
-        self._setup_collections(mongo_url=mongo_url)
+        self._setup_client(mongo_url=mongo_url)
+        self._setup_collections()
         self._admins = set([] if admins is None else admins)
 
-    def _setup_collections(self, mongo_url):
+    def _setup_client(self, mongo_url):
         self._mongo_client = MongoClient(mongo_url)
         self._mongo_db = self._mongo_client.get_default_database()
+
+    def _setup_collections(self):
         self.mongo_users = self._mongo_db.get_collection('users')
         self.mongo_messages = self._mongo_db.get_collection('messages')
         self.mongo_coffee_pairs = self._mongo_db.get_collection('coffee_pairs')

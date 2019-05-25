@@ -1,15 +1,36 @@
 import pytest
 
+import mongomock
+
 from utils.dialogue_management import Context
 from utils.database import Database
+from utils.messaging import BaseSender
 
-from dog_mode import doggy_style
+from scenarios.dog_mode import doggy_style
+
+from response_logic import respond
+
+from telebot.types import Message, User, Chat
 
 
 class MockedDatabase(Database):
-    def _setup_collections(self, mongo_url):
-        # todo: make some collections mocked for the tests that need them
-        pass
+    def _setup_client(self, mongo_url):
+        self._mongo_client = mongomock.MongoClient()
+        self._mongo_db = self._mongo_client.db
+
+
+class MockedMessage:
+    def __init__(self, text, intent):
+        self.text = text
+        self.intent = intent
+
+
+class MockedSender(BaseSender):
+    def __init__(self):
+        self.sent_messages = []
+
+    def __call__(self, *args, **kwargs):
+        self.sent_messages.append(MockedMessage(text=kwargs['text'], intent=kwargs.get('intent')))
 
 
 @pytest.fixture()
@@ -19,7 +40,27 @@ def mocked_member_uo():
 
 @pytest.fixture()
 def mocked_db():
-    return MockedDatabase(mongo_url="no url")
+    db = MockedDatabase(mongo_url="no url", admins=['an_admin'])
+    db.mongo_membership.insert_one({'username': 'a_member', 'is_member': True})
+    return db
+
+@pytest.fixture()
+def mocked_sender():
+    return MockedSender()
+
+
+def make_mocked_message(text, user_id=123, first_name='Юзер', username='a_member'):
+    message = Message(
+        message_id=None,
+        from_user=User(id=user_id, is_bot=False, first_name=first_name, username=username),
+        date=None,
+        chat=Chat(id=user_id, type=None),
+        content_type=None,
+        options={},
+        json_string=None
+    )
+    message.text = text
+    return message
 
 
 def test_everything_is_ok():
@@ -42,3 +83,42 @@ def test_dog_mode_activation(mocked_member_uo, mocked_db, text, expected_intent)
     ctx = Context(text=text, user_object=mocked_member_uo)
     new_ctx = doggy_style(ctx, database=mocked_db)
     assert new_ctx.intent == expected_intent
+
+
+@pytest.mark.parametrize("text,expected_intent", [
+    ("привет", "HELLO"),
+    ("покажи встречи", "EVENT_GET_LIST"),
+    ("Участвовать в следующем кофе", "TAKE_PART"),
+    ("мой пиплбук", "PEOPLEBOOK_GET_FAIL"),
+    ("да", "OTHER"),
+    ("абырвалг", "OTHER"),
+    ("добавить членов", "OTHER"),
+    ("создать встречу", "OTHER"),
+    ("сука бля", "DOG"),
+    ("чё выёбываешься", "DOG"),
+    ("ну ты пидор", "DOG"),
+])
+def test_basic_responses(mocked_sender, mocked_db, text, expected_intent):
+    respond(
+        message=make_mocked_message(text),
+        database=mocked_db,
+        sender=mocked_sender
+    )
+    assert len(mocked_sender.sent_messages) == 1
+    last_message = mocked_sender.sent_messages[-1]
+    assert last_message.intent == expected_intent
+
+
+@pytest.mark.parametrize("text,expected_intent", [
+    ("добавить членов", "MEMBER_ADD_INIT"),
+    ("создать встречу", "EVENT_CREATE_INIT"),
+])
+def test_admin(mocked_sender, mocked_db, text, expected_intent):
+    respond(
+        message=make_mocked_message(text, username='an_admin'),
+        database=mocked_db,
+        sender=mocked_sender
+    )
+    assert len(mocked_sender.sent_messages) == 1
+    last_message = mocked_sender.sent_messages[-1]
+    assert last_message.intent == expected_intent
