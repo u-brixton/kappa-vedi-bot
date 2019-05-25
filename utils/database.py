@@ -7,6 +7,10 @@ from . import matchers
 
 class Database:
     def __init__(self, mongo_url, admins=None):
+        self._setup_collections(mongo_url=mongo_url)
+        self._admins = set([] if admins is None else admins)
+
+    def _setup_collections(self, mongo_url):
         self._mongo_client = MongoClient(mongo_url)
         self._mongo_db = self._mongo_client.get_default_database()
         self.mongo_users = self._mongo_db.get_collection('users')
@@ -20,8 +24,6 @@ class Database:
         self.mongo_membership = self._mongo_db.get_collection('membership')
         self.message_queue = self._mongo_db.get_collection('message_queue')
         # (username: text, text: text, intent: text, fresh: bool)
-
-        self._admins = set([] if admins is None else admins)
 
     def is_at_least_guest(self, user_object):
         return self.is_guest(user_object) or self.is_member(user_object) or self.is_admin(user_object)

@@ -501,11 +501,14 @@ def daily_event_management(database: Database, sender: Callable):
     all_users = {u['username']: u for u in database.mongo_users.find() if u['username'] is not None}
     # find all the future events
     future_events = []
+    yesterday_events = []
     for e in database.mongo_events.find({}):
         days_to = (datetime.strptime('2019.05.25', '%Y.%m.%d') - datetime.utcnow()) / timedelta(days=1)
         if days_to >= 0:
             e['days_to'] = int(days_to)
             future_events.append(e)
+        elif -2 < days_to < -1:
+            yesterday_events.append(e)
     # find all open invitations for the future events
     for event in future_events:
         hold_invitations = database.mongo_participations.find(
@@ -555,3 +558,22 @@ def daily_event_management(database: Database, sender: Callable):
                         {'username': invitation['username']},
                         {'$set': {'last_intent': intent, 'event_code': invitation['code']}}
                     )
+    for event in yesterday_events:
+        sure_invitations = database.mongo_participations.find(
+            {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
+        )
+        for invitation in sure_invitations:
+            user_account = database.mongo_users.find_one({'username': invitation['username']})
+            if user_account is None:
+                continue
+            if database.is_at_least_member(user_object=user_account):
+                # we send notifications only to guests of an event.
+                continue
+            text = "Привет!\n" \
+                   "Надеюсь, тебе понравилась вчерашняя встреча Каппа Веди?\n" \
+                   "В любом случае, мы будем рады, если ты оставишь свою обратную связь о встрече." \
+                   "Для этого мы сделали небольшую анкету, минут на 3-5: http://bit.ly/kvfeedback.\n" \
+                   "Если ты хочешь присоединиться клубу, ты можешь заполнить заявку на вступление" \
+                   "по ссылке http://bit.ly/welcome2kv. Мы рассмотрим её на ближайшей оргвстрече клуба.\n" \
+                   "Спасибо за участие во встрече клуба. Если вы есть, будьте первыми!"
+            sender(text=text, database=database, user_id=user_account['tg_id'])
