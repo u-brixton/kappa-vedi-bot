@@ -2,14 +2,17 @@ import re
 
 
 class Context:
-    def __init__(self, user_object=None, text=None, sender=None):
+    def __init__(self, user_object=None, text=None, sender=None, message=None, bot=None):
         self.user_object = user_object
         self.username = user_object.get('username', '')
         self.last_intent = user_object.get('last_intent', '')
         self.last_expected_intent = user_object.get('last_expected_intent', '')
-        self.text = text
-        self.text_normalized = re.sub('[.,!?:;()\s]+', ' ', text.lower()).strip()
+        self.text = text or ''
+        self.text_normalized = re.sub('[.,!?:;()\s]+', ' ', self.text.lower()).strip()
         self.sender = sender
+
+        self.message = message
+        self.bot = bot
 
         self.intent = None
         self.response = None

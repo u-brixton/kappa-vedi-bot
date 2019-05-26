@@ -12,14 +12,14 @@ from scenarios.membership import try_membership_management
 from scenarios.coffee import try_coffee_management, TAKE_PART, NOT_TAKE_PART
 
 
-def respond(message, database: Database, sender: BaseSender):
+def respond(message, database: Database, sender: BaseSender, bot=None):
     # todo: make it less dependent on telebot Message class structure
     uo = get_or_insert_user(message.from_user, database=database)
     user_id = message.chat.id
     LoggedMessage(
         text=message.text, user_id=user_id, from_user=True, database=database, username=uo.get('username')
     ).save()
-    ctx = Context(text=message.text, user_object=uo, sender=sender)
+    ctx = Context(text=message.text, user_object=uo, sender=sender, message=message, bot=bot)
 
     for handler in [
         try_queued_messages,

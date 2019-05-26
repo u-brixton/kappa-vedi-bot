@@ -4,6 +4,8 @@ from utils.database import Database
 from utils.dialogue_management import Context
 from utils import matchers
 
+from utils.photo import photo_url_from_message
+
 
 class PB:
     PEOPLEBOOK_GET_SUCCESS = 'PEOPLEBOOK_GET_SUCCESS'
@@ -22,9 +24,10 @@ class PB:
     PEOPLEBOOK_NO_USERNAME = 'PEOPLEBOOK_NO_USERNAME'
 
 
-PHOTO_INSTRUCTION = 'Важно, чтобы лицо было хорошо видно. ' \
-                    '\nСсылка должна быть не на страничку с фото, а на сам файл ' \
-                    '(т.е. должна расширение типа .png, .jpg и т.п. в конце ссылки).' \
+PHOTO_INSTRUCTION = '\nВажно, чтобы лицо было хорошо видно. ' \
+                    '\nВ ответ на это сообщение вы можете просто прислать мне файл с вашим фото.' \
+                    '\nЕсли вы шлёте ссылку, она должна быть не на страничку с фото, а на сам файл ' \
+                    '(т.е. должна иметь расширение типа .png, .jpg и т.п. в конце ссылки).' \
                     '\nЕсли у вас нет ссылки, можно загрузить фото, например, на vfl.ru. ' \
                     'Потом оттуда надо будет скопировать ПРЯМУЮ ссылку (последнее окошко).' \
                     '\nЕщё можно взять ссылку из соцсети: кликнуть правой кнопкой по фото на вашей страничке,' \
@@ -118,21 +121,27 @@ def try_peoplebook_management(ctx: Context, database: Database):
             ctx.expected_intent = PB.PEOPLEBOOK_SET_TOPICS
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
         ctx.intent = PB.PEOPLEBOOK_SET_PHOTO
-        if re.match('.+\.[a-z]{2,}/.+\.(jpg|jpeg|png)', ctx.text.strip()):
+        photo_url = photo_url_from_message(message=ctx.message, bot=ctx.bot)
+        if photo_url is not None:
+            ctx.response = 'Ура, вы загрузили фото из файла! Теперь оно доступно по ссылке {}'.format(photo_url)
+        elif re.match('.+\.[a-z]{2,}/.+\.(jpg|jpeg|png)', ctx.text.strip()):
             ctx.response = random.choice([
                 'Отлично! Мне нравится эта фотография.',
                 'Спасибо! Очень красивое фото.',
                 'Фото успешно добавлено! Кстати, вы тут хорошо выглядите.',
                 'Вау! А вы тут зачётно выглядите \U0001f60a'
             ])
+            photo_url = ctx.text.strip()
         else:
+            # todo: try to extract real photo from html or even a page
             ctx.response = 'Этот текст не очень похож на ссылку на фото.' \
                            '\nПока что я запомню эту ссылку.' \
                            '\nНо пожалуйста, проверьте потом, что фото нормально отображается на вашей страничке ПБ.' \
                            '\nЖелательно проверить в инкогнито режиме браузера (фото может быть доступно только вам).'
             ctx.response = ctx.response + '\nКак загружать фото:\n' + PHOTO_INSTRUCTION + '\n\n'
+            photo_url = ctx.text.strip()
         database.mongo_peoplebook.update_one(
-            {'username': ctx.user_object['username']}, {'$set': {'photo': ctx.text.strip()}}
+            {'username': ctx.user_object['username']}, {'$set': {'photo': photo_url}}
         )
         ctx.expected_intent = PB.PEOPLEBOOK_SET_CONTACTS if within else PB.PEOPLEBOOK_SHOW_PROFILE
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
@@ -179,7 +188,8 @@ def try_peoplebook_management(ctx: Context, database: Database):
         ctx.response = ctx.response + '\nПро что вас можно расспросить, о чём вы знаете больше других? ' \
                                       'Это могут быть города, хобби, мероприятия, необычный опыт.'
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
-        ctx.response = ctx.response + '\nДайте ссылку на фото, по которому вас проще всего будет найти. '
+        ctx.response = ctx.response + '\nПришлите мне фото (или прямую ссылку на фото), ' \
+                                      'по которому вас проще всего будет найти.'
         ctx.response = ctx.response + PHOTO_INSTRUCTION
     elif ctx.expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
         ctx.response = ctx.response + '\nЕсли хотите, можете оставить контакты в соцсетях: ' \

@@ -6,3 +6,4 @@ pymorphy2
 sentry-sdk==0.8.0
 pyyaml
 mongomock
+cloudinary

@@ -48,9 +48,9 @@ def wake_up():
     return "Маам, ну ещё пять минуточек!", 200
 
 
-@bot.message_handler(func=lambda message: True)
+@bot.message_handler(func=lambda message: True, content_types=['document', 'text', 'photo'])
 def process_message(msg):
-    respond(message=msg, database=DATABASE, sender=SENDER)
+    respond(message=msg, database=DATABASE, sender=SENDER, bot=bot)
 
 
 @server.route('/' + TELEBOT_URL + TOKEN, methods=['POST'])
