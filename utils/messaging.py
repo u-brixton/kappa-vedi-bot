@@ -1,3 +1,5 @@
+import time
+
 from utils.telegram import render_markup
 from utils.database import LoggedMessage
 
@@ -46,9 +48,10 @@ class BaseSender:
 
 
 class TelegramSender(BaseSender):
-    def __init__(self, bot, admin_uid=None):
+    def __init__(self, bot, admin_uid=None, timeout=0):
         self.bot = bot
         self.admin_uid = admin_uid
+        self.timeout = timeout
 
     def __call__(
             self,
@@ -76,6 +79,8 @@ class TelegramSender(BaseSender):
                 intent=intent, meta=meta, username=username
             ).save()
             # todo: actually save intent and meta
+            if self.timeout:
+                time.sleep(self.timeout)
             return True
         except Exception as e:
             error = '\n'.join([

@@ -15,6 +15,9 @@ from utils.database import Database
 from utils.messaging import TelegramSender
 
 
+# The API will not allow more than ~30 messages to different users per second
+TIMEOUT_BETWEEN_MESSAGES = 0.05
+
 ON_HEROKU = os.environ.get('ON_HEROKU')
 TOKEN = os.environ['TOKEN']
 bot = telebot.TeleBot(TOKEN)
@@ -29,7 +32,7 @@ DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibek
 if os.environ.get('SENTRY_DSN'):
     sentry_sdk.init(os.environ.get('SENTRY_DSN'))
 
-SENDER = TelegramSender(bot, admin_uid=ADMIN_UID)
+SENDER = TelegramSender(bot, admin_uid=ADMIN_UID, timeout=TIMEOUT_BETWEEN_MESSAGES)
 
 
 @server.route("/" + TELEBOT_URL)

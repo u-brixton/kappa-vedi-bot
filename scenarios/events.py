@@ -83,7 +83,7 @@ def make_invitation(invitation, database: Database):
 def try_invitation(ctx: Context, database: Database):
     deferred_invitation = database.mongo_participations.find_one(
         {'username': ctx.username, 'status': InvitationStatuses.NOT_SENT}
-    )
+    )  # todo: check if the event is in the future
     if ctx.last_intent in {EventIntents.INVITE, EventIntents.DID_NOT_PARSE}:
         new_status = None
         event_code = ctx.user_object.get('event_code')
@@ -538,7 +538,7 @@ def daily_event_management(database: Database, sender: Callable):
     # find all the future events
     future_events = []
     today_events = []
-    yesterday_events = []
+    past_events = []
     for e in database.mongo_events.find({}):
         days_to = (datetime.strptime('2019.05.25', '%Y.%m.%d') - datetime.utcnow()) / timedelta(days=1)
         if days_to >= 0:
@@ -546,8 +546,8 @@ def daily_event_management(database: Database, sender: Callable):
             future_events.append(e)
         elif -1 < days_to < 0:
             today_events.append(e)
-        elif -2 < days_to < -1:
-            yesterday_events.append(e)
+        elif days_to < -1:
+            past_events.append(e)
     # find all open invitations for the future events
     for event in future_events:
         hold_invitations = database.mongo_participations.find(
@@ -597,7 +597,7 @@ def daily_event_management(database: Database, sender: Callable):
                         {'username': invitation['username']},
                         {'$set': {'last_intent': intent, 'event_code': invitation['code']}}
                     )
-    for event in yesterday_events:
+    for event in past_events:
         sure_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
         )
@@ -624,7 +624,7 @@ def daily_event_management(database: Database, sender: Callable):
                 {'_id': invitation['_id']},
                 {'$set': {
                     'status': InvitationStatuses.ON_HOLD_OVERDUE
-                    if event['status'] == InvitationStatuses.ON_HOLD
+                    if invitation.get('status') == InvitationStatuses.ON_HOLD
                     else InvitationStatuses.NOT_SENT_OVERDUE
                 }}
             )
