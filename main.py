@@ -52,7 +52,7 @@ def wake_up():
 
 
 @server.route("/send-events/")
-def wake_up():
+def do_event_management():
     daily_event_management(database=DATABASE, sender=SENDER)
     return "Сделал со встречами всё, что хотел!", 200
 
