@@ -13,9 +13,11 @@ PEOPLEBOOK_EVENT_ROOT = 'http://kv-peoplebook.herokuapp.com/event/'
 
 class InvitationStatuses:
     NOT_SENT = 'NOT_SENT'
+    NOT_ANSWERED = 'NOT_ANSWERED'
     ON_HOLD = 'ON_HOLD'
     ACCEPT = 'ACCEPT'
     REJECT = 'REJECT'
+    NOT_ANSWERED_OVERDUE = 'NOT_ANSWERED_OVERDUE'
     ON_HOLD_OVERDUE = 'ON_HOLD_OVERDUE'
     NOT_SENT_OVERDUE = 'NOT_SENT_OVERDUE'
 
@@ -23,13 +25,39 @@ class InvitationStatuses:
     def translate(cls, status):
         d = {
             cls.NOT_SENT: 'приглашение пока не получено',
+            cls.NOT_ANSWERED: 'пока нет ответа',
             cls.ON_HOLD: 'пока определяется',
             cls.ACCEPT: 'принял(а) приглашение',
             cls.REJECT: 'отклонил(а) приглашение',
             cls.ON_HOLD_OVERDUE: 'так и не определил(ся|ась)',
-            cls.NOT_SENT_OVERDUE: 'так и не получил(а) приглашение'
+            cls.NOT_SENT_OVERDUE: 'так и не получил(а) приглашение',
+            cls.NOT_ANSWERED_OVERDUE: 'так и не получено ответа'
         }
         return d.get(status, 'какой-то непонятный статус')
+
+    @classmethod
+    def translate_second_person(cls, status):
+        d = {
+            cls.NOT_SENT: 'Вы не участвуете',
+            cls.NOT_ANSWERED: 'Вы пока не решили, участвовать ли',
+            cls.ON_HOLD: 'Вы пока не решили, участвовать ли',
+            cls.ACCEPT: 'Вы участвуете',
+            cls.REJECT: 'Вы не участвуете',
+            cls.ON_HOLD_OVERDUE: 'Вы не участвовали',
+            cls.NOT_SENT_OVERDUE: 'Вы не участвовали',
+            cls.NOT_ANSWERED_OVERDUE: 'Вы не участвовали'
+        }
+        return d.get(status, 'какой-то непонятный статус')
+
+    @classmethod
+    def undecided_states(cls):
+        return [cls.NOT_SENT, cls.NOT_ANSWERED, cls.ON_HOLD]
+
+    @classmethod
+    def make_overdue(cls, status):
+        if status.endswith('_OVERDUE'):
+            return status
+        return status + '_OVERDUE'
 
 
 class EventIntents:
@@ -169,16 +197,10 @@ def try_event_usage(ctx: Context, database: Database):
             for e in available_events:
                 ctx.response = ctx.response + '/{}: "{}", {}\n'.format(e['code'], e['title'], e['date'])
                 invitation = database.mongo_participations.find_one({'username': ctx.username, 'code': e['code']})
-                if (invitation is None or 'status' not in invitation or
-                        invitation['status'] in {InvitationStatuses.REJECT, InvitationStatuses.NOT_SENT_OVERDUE,
-                                                 InvitationStatuses.ON_HOLD_OVERDUE}):
+                if invitation is None or 'status' not in invitation:
                     status = 'Вы не участвуете'
-                elif invitation['status'] in {InvitationStatuses.ON_HOLD, InvitationStatuses.NOT_SENT}:
-                    status = 'Вы пока не решили, участвовать ли'
-                elif invitation['status'] == InvitationStatuses.ACCEPT:
-                    status = 'Вы участвуете'
                 else:
-                    status = 'Какой-то непонятный статус'
+                    status = InvitationStatuses.translate_second_person(invitation.status)
                 ctx.response = ctx.response + '{}\n\n'.format(status)
             ctx.response = ctx.response + 'Кликните по нужной ссылке, чтобы выбрать встречу.'
         elif len(all_events) > 0:
@@ -281,6 +303,11 @@ def sent_invitation_to_user(username, event_code, database: Database, sender: Ca
             {'username': username},
             {'$set': {'last_intent': intent, 'event_code': event_code}}
         )
+        if invitation.get('status') == InvitationStatuses.NOT_SENT:
+            database.mongo_participations.update_one(
+                {'_id': invitation.get('_id')},
+                {'$set': {'status': InvitationStatuses.NOT_ANSWERED}}
+            )
         return True
     else:
         return False
@@ -559,11 +586,14 @@ def daily_event_management(database: Database, sender: Callable):
         not_sent_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': InvitationStatuses.NOT_SENT}
         )
+        not_answered_invitations = database.mongo_participations.find(
+            {'code': event['code'], 'status': InvitationStatuses.NOT_ANSWERED}
+        )
         sure_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
         )
         open_invitations = [
-            inv for inv in (list(hold_invitations) + list(not_sent_invitations))
+            inv for inv in (list(hold_invitations) + list(not_sent_invitations) + list(not_answered_invitations))
             if inv['username'] in all_users  # if not, we just cannot send anything
         ]
         # for every open invitation, decide whether to remind (soon-ness -> reminder probability)
@@ -621,14 +651,13 @@ def daily_event_management(database: Database, sender: Callable):
             sender(text=text, database=database, user_id=user_account['tg_id'])
     for event in past_events:
         undecided_invitations = database.mongo_participations.find(
-            {'code': event['code'], 'status': {'$in': [InvitationStatuses.NOT_SENT, InvitationStatuses.ON_HOLD]}}
+            {'code': event['code'], 'status': {'$in': list(InvitationStatuses.undecided_states())}}
         )
         for invitation in undecided_invitations:
+            new_status = InvitationStatuses.make_overdue(invitation.get('status', 'unknown'))
             database.mongo_participations.update_one(
                 {'_id': invitation['_id']},
                 {'$set': {
-                    'status': InvitationStatuses.ON_HOLD_OVERDUE
-                    if invitation.get('status') == InvitationStatuses.ON_HOLD
-                    else InvitationStatuses.NOT_SENT_OVERDUE
+                    'status': new_status
                 }}
             )
