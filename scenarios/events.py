@@ -200,7 +200,7 @@ def try_event_usage(ctx: Context, database: Database):
                 if invitation is None or 'status' not in invitation:
                     status = 'Вы не участвуете'
                 else:
-                    status = InvitationStatuses.translate_second_person(invitation.status)
+                    status = InvitationStatuses.translate_second_person(invitation['status'])
                 ctx.response = ctx.response + '{}\n\n'.format(status)
             ctx.response = ctx.response + 'Кликните по нужной ссылке, чтобы выбрать встречу.'
         elif len(all_events) > 0:
