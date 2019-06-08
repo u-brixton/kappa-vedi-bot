@@ -539,15 +539,18 @@ def daily_event_management(database: Database, sender: Callable):
     future_events = []
     today_events = []
     past_events = []
+    yesterday_events = []
     for e in database.mongo_events.find({}):
-        days_to = (datetime.strptime('2019.05.25', '%Y.%m.%d') - datetime.utcnow()) / timedelta(days=1)
+        days_to = (datetime.strptime(e['date'], '%Y.%m.%d') - datetime.utcnow()) / timedelta(days=1)
         if days_to >= 0:
             e['days_to'] = int(days_to)
             future_events.append(e)
-        elif -1 < days_to < 0:
+        elif -1 <= days_to < 0:
             today_events.append(e)
         elif days_to < -1:
             past_events.append(e)
+        if -2 < days_to < -1:
+            yesterday_events.append(e)
     # find all open invitations for the future events
     for event in future_events:
         hold_invitations = database.mongo_participations.find(
@@ -565,12 +568,12 @@ def daily_event_management(database: Database, sender: Callable):
         ]
         # for every open invitation, decide whether to remind (soon-ness -> reminder probability)
         for inv in open_invitations:
-            if event['days_to'] > 7:
+            if event['days_to'] > 14:
                 remind_probability = 0.1
             elif event['days_to'] > 7:
-                remind_probability = 0.25
+                remind_probability = 0.3
             elif event['days_to'] > 3:
-                remind_probability = 0.5
+                remind_probability = 0.7
             else:
                 remind_probability = 1
             if random.random() <= remind_probability:
@@ -597,7 +600,7 @@ def daily_event_management(database: Database, sender: Callable):
                         {'username': invitation['username']},
                         {'$set': {'last_intent': intent, 'event_code': invitation['code']}}
                     )
-    for event in past_events:
+    for event in yesterday_events:
         sure_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
         )
@@ -616,6 +619,7 @@ def daily_event_management(database: Database, sender: Callable):
                    "по ссылке http://bit.ly/welcome2kv. Мы рассмотрим её на ближайшей оргвстрече клуба.\n" \
                    "Спасибо за участие во встрече клуба. Если вы есть, будьте первыми!"
             sender(text=text, database=database, user_id=user_account['tg_id'])
+    for event in past_events:
         undecided_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': {'$in': [InvitationStatuses.NOT_SENT, InvitationStatuses.ON_HOLD]}}
         )

@@ -51,6 +51,12 @@ def wake_up():
     return "Маам, ну ещё пять минуточек!", 200
 
 
+@server.route("/send-events/")
+def wake_up():
+    daily_event_management(database=DATABASE, sender=SENDER)
+    return "Сделал со встречами всё, что хотел!", 200
+
+
 @bot.message_handler(func=lambda message: True, content_types=['document', 'text', 'photo'])
 def process_message(msg):
     respond(message=msg, database=DATABASE, sender=SENDER, bot=bot)
