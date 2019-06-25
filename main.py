@@ -16,7 +16,7 @@ from utils.messaging import TelegramSender
 
 
 # The API will not allow more than ~30 messages to different users per second
-TIMEOUT_BETWEEN_MESSAGES = 0.05
+TIMEOUT_BETWEEN_MESSAGES = 0.2
 
 ON_HEROKU = os.environ.get('ON_HEROKU')
 TOKEN = os.environ['TOKEN']
