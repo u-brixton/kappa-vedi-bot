@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import Callable
 
 from utils.database import Database
@@ -24,14 +25,14 @@ class InvitationStatuses:
     @classmethod
     def translate(cls, status):
         d = {
-            cls.NOT_SENT: 'приглашение пока не получено',
-            cls.NOT_ANSWERED: 'пока нет ответа',
-            cls.ON_HOLD: 'пока определяется',
-            cls.ACCEPT: 'принял(а) приглашение',
-            cls.REJECT: 'отклонил(а) приглашение',
-            cls.ON_HOLD_OVERDUE: 'так и не определил(ся|ась)',
-            cls.NOT_SENT_OVERDUE: 'так и не получил(а) приглашение',
-            cls.NOT_ANSWERED_OVERDUE: 'так и не получено ответа'
+            cls.NOT_SENT: 'не получено',
+            cls.NOT_ANSWERED: 'без ответа',
+            cls.ON_HOLD: 'думает',
+            cls.ACCEPT: 'да',
+            cls.REJECT: 'нет',
+            cls.ON_HOLD_OVERDUE: 'так и не решил(а)',
+            cls.NOT_SENT_OVERDUE: 'так и не получено',
+            cls.NOT_ANSWERED_OVERDUE: 'так и нет ответа'
         }
         return d.get(status, 'какой-то непонятный статус')
 
@@ -535,12 +536,18 @@ def try_event_edition(ctx: Context, database: Database):
         if len(event_members) == 0:
             ctx.response = 'Пока в этой встрече совсем нет участников. Если вы есть, будьте первыми!!!'
         else:
-            statuses = '\n'.join([
-                '@{} - {}'.format(em['username'], InvitationStatuses.translate(em['status'])) +
-                ('' if 'invitor' not in em else ' (гость @{})'.format(em['invitor']))
-                for em in event_members
+            statuses = [InvitationStatuses.translate(em['status']) for em in event_members]
+            descriptions = '\n'.join([
+                '@{} - {}'.format(em['username'], st) +
+                ('' if 'invitor' not in em or database.is_at_least_member({'username': em['username']})
+                 else ' (гость @{})'.format(em['invitor']))
+                for em, st in zip(event_members, statuses)
             ])
-            ctx.response = 'Вот какие статусы участников встречи {}\n{}'.format(event_code, statuses)
+            cntr = Counter(statuses)
+            summary = '\n'.join(['{} - {}'.format(k, cntr[k]) for k in sorted(cntr.keys())])
+            ctx.response = 'Вот какие статусы участников встречи {}:\n{}\n\n{}'.format(
+                event_code, summary, descriptions
+            )
         ctx.response = ctx.response + '\n\n' + render_full_event(ctx, database, the_event)
     elif ctx.text == '/remove_event':
         ctx.intent = 'EVENT_REMOVE'
