@@ -676,11 +676,13 @@ def daily_event_management(database: Database, sender: Callable):
                 }}
             )
 
+
 def get_name(username, database):
     uo = database.mongo_users.find_one({'username': username})
     if uo is None:
         return 'не в боте'
     return '{} {}'.format(uo.get('first_name', '-'), uo.get('last_name', '-'))
+
 
 def get_membership(username, database, invitor=None):
     if database.is_at_least_member({'username': username}):
@@ -690,6 +692,7 @@ def get_membership(username, database, invitor=None):
             return 'Гость'
         else:
             return 'Гость @{}'.format(invitor)
+
 
 def event_to_df(event_code, database):
     event_members = list(database.mongo_participations.find({'code': event_code}))
@@ -709,6 +712,7 @@ def event_to_df(event_code, database):
 
     df = pd.DataFrame(rows, columns=columns).sort_values('Имя Фамилия')
     return df
+
 
 def event_to_file(event_code, database):
     df = event_to_df(event_code, database)
