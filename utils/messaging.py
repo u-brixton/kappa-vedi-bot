@@ -43,6 +43,7 @@ class BaseSender:
             notify_on_error=False,
             intent=None,
             meta=None,
+            file_to_send=None,
     ):
         raise NotImplementedError
 
@@ -59,7 +60,8 @@ class TelegramSender(BaseSender):
             notify_on_error=True,
             intent=None,
             meta=None,
-            username=None
+            username=None,
+            file_to_send=None
     ):
         try:
             markup = render_markup(suggests)
@@ -74,6 +76,11 @@ class TelegramSender(BaseSender):
                     username = reply_to.from_user.username
             else:
                 raise ValueError('user_id and reply_to were not provided')
+
+            if file_to_send is not None:
+                with open(file_to_send, 'rb') as doc:
+                    self.bot.send_document(user_id, doc)
+
             LoggedMessage(
                 text=text, user_id=user_id, from_user=False, database=database,
                 intent=intent, meta=meta, username=username

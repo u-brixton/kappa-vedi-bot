@@ -14,6 +14,8 @@ from scenarios.coffee import try_coffee_management, TAKE_PART, NOT_TAKE_PART
 
 def respond(message, database: Database, sender: BaseSender, bot=None):
     # todo: make it less dependent on telebot Message class structure
+    if bot is not None:
+        bot.send_chat_action(message.chat.id, 'typing')
     uo = get_or_insert_user(message.from_user, database=database)
     user_id = message.chat.id
     LoggedMessage(
@@ -55,4 +57,7 @@ def respond(message, database: Database, sender: BaseSender, bot=None):
         ctx.suggests.append('Создать встречу')
         ctx.suggests.append('Добавить членов')
 
-    sender(text=ctx.response, reply_to=message, suggests=ctx.suggests, database=database, intent=ctx.intent)
+    sender(
+        text=ctx.response, reply_to=message, suggests=ctx.suggests, database=database, intent=ctx.intent,
+        file_to_send=ctx.file_to_send
+    )

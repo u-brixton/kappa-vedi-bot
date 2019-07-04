@@ -19,6 +19,7 @@ class Context:
         self.the_update = None
         self.expected_intent = None
         self.suggests = []
+        self.file_to_send = None
 
     def make_update(self):
         if self.the_update is None:

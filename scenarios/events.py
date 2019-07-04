@@ -4,6 +4,8 @@ from typing import Callable
 from utils.database import Database
 from utils.dialogue_management import Context
 from utils import matchers
+
+import pandas as pd
 import random
 import re
 
@@ -486,7 +488,8 @@ EVENT_EDITION_COMMANDS = '\n'.join(
     [
         "/remove_event - удалить событие и отменить все приглашения",
         "/invite_everyone - пригласить всех членов клуба",
-        "/invitation_statuses - посмотреть статусы приглашений"
+        "/invitation_statuses - посмотреть статусы приглашений",
+        "/invitation_statuses_excel - выгрузить статусы приглашений"
     ]
 )
 
@@ -549,6 +552,10 @@ def try_event_edition(ctx: Context, database: Database):
                 event_code, summary, descriptions
             )
         ctx.response = ctx.response + '\n\n' + render_full_event(ctx, database, the_event)
+    elif ctx.text == '/invitation_statuses_excel':
+        ctx.intent = 'EVENT_GET_INVITATION_STATUSES_EXCEL'
+        ctx.response = 'Формирую выгрузку...'
+        ctx.file_to_send = event_to_file(event_code, database=database)
     elif ctx.text == '/remove_event':
         ctx.intent = 'EVENT_REMOVE'
         ctx.expected_intent = 'EVENT_REMOVE_CONFIRM'
@@ -668,3 +675,43 @@ def daily_event_management(database: Database, sender: Callable):
                     'status': new_status
                 }}
             )
+
+def get_name(username, database):
+    uo = database.mongo_users.find_one({'username': username})
+    if uo is None:
+        return 'не в боте'
+    return '{} {}'.format(uo.get('first_name', '-'), uo.get('last_name', '-'))
+
+def get_membership(username, database, invitor=None):
+    if database.is_at_least_member({'username': username}):
+        return 'Член клуба'
+    else:
+        if invitor is None:
+            return 'Гость'
+        else:
+            return 'Гость @{}'.format(invitor)
+
+def event_to_df(event_code, database):
+    event_members = list(database.mongo_participations.find({'code': event_code}))
+    statuses = [InvitationStatuses.translate(em['status']) for em in event_members]
+    rows = [
+        [
+            get_name(em['username'], database),
+            get_membership(em['username'], database, em.get('invitor')),
+            'Да',
+            InvitationStatuses.translate(em['status']),
+            '-',
+            em['username'],
+        ]
+        for em in event_members
+    ]
+    columns = ['Имя Фамилия', 'Статус', 'Приглашен', 'Согласился', 'Оплата', 'Контакт']
+
+    df = pd.DataFrame(rows, columns=columns).sort_values('Имя Фамилия')
+    return df
+
+def event_to_file(event_code, database):
+    df = event_to_df(event_code, database)
+    filename = 'data_{}.xlsx'.format(event_code)
+    df.to_excel(filename)
+    return filename
