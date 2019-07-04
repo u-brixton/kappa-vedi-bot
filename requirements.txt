@@ -8,3 +8,4 @@ pyyaml
 mongomock
 cloudinary
 pandas
+openpyxl

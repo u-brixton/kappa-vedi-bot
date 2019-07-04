@@ -696,7 +696,6 @@ def get_membership(username, database, invitor=None):
 
 def event_to_df(event_code, database):
     event_members = list(database.mongo_participations.find({'code': event_code}))
-    statuses = [InvitationStatuses.translate(em['status']) for em in event_members]
     rows = [
         [
             get_name(em['username'], database),
