@@ -105,7 +105,7 @@ def get_or_insert_user(tg_user=None, tg_uid=None, database: Database=None):
         tg_id=tg_user.id,
         first_name=tg_user.first_name,
         last_name=tg_user.last_name,
-        username=tg_user.username,
+        username=matchers.normalize_username(tg_user.username),
         wants_next_coffee=False
     )
     database.mongo_users.insert_one(new_user)
