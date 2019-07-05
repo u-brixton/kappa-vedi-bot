@@ -39,6 +39,7 @@ def load_photo_from_message(bot, message, directory='offline'):
 
 
 def upload_photo_to_cloudinary(full_file_name):
+    print('trying to upload file {} to cloudinary...'.format(full_file_name))
     cloudinary_url = os.getenv('CLOUDINARY_URL')
     if cloudinary_url is None:
         print('no url')
@@ -53,4 +54,5 @@ def upload_photo_to_cloudinary(full_file_name):
         api_key=api_key,
         cloud_name=cloud_name
     )
+    print('file {} has been successfully uploaded to {}'.format(full_file_name, uploaded.get('url')))
     return uploaded['url']
