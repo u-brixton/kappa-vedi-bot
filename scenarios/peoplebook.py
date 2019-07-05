@@ -121,28 +121,32 @@ def try_peoplebook_management(ctx: Context, database: Database):
             ctx.expected_intent = PB.PEOPLEBOOK_SET_TOPICS
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_PHOTO:
         ctx.intent = PB.PEOPLEBOOK_SET_PHOTO
-        photo_url = photo_url_from_message(message=ctx.message, bot=ctx.bot)
-        if photo_url is not None:
-            ctx.response = 'Ура, вы загрузили фото из файла! Теперь оно доступно по ссылке {}'.format(photo_url)
-        elif re.match('.+\.[a-z]{2,}/.+\.(jpg|jpeg|png)', ctx.text.strip()):
-            ctx.response = random.choice([
-                'Отлично! Мне нравится эта фотография.',
-                'Спасибо! Очень красивое фото.',
-                'Фото успешно добавлено! Кстати, вы тут хорошо выглядите.',
-                'Вау! А вы тут зачётно выглядите \U0001f60a'
-            ])
-            photo_url = ctx.text.strip()
+        try:
+            photo_url = photo_url_from_message(message=ctx.message, bot=ctx.bot)
+        except Exception:
+            ctx.response = 'Произошла какая-то ошибка при загрузке фото. Попробуйте загрузить фото на хостинг самостоятельно и скинуть мне его URL'
         else:
-            # todo: try to extract real photo from html or even a page
-            ctx.response = 'Этот текст не очень похож на ссылку на фото.' \
-                           '\nПока что я запомню эту ссылку.' \
-                           '\nНо пожалуйста, проверьте потом, что фото нормально отображается на вашей страничке ПБ.' \
-                           '\nЖелательно проверить в инкогнито режиме браузера (фото может быть доступно только вам).'
-            ctx.response = ctx.response + '\nКак загружать фото:\n' + PHOTO_INSTRUCTION + '\n\n'
-            photo_url = ctx.text.strip()
-        database.mongo_peoplebook.update_one(
-            {'username': ctx.user_object['username']}, {'$set': {'photo': photo_url}}
-        )
+            if photo_url is not None:
+                ctx.response = 'Ура, вы загрузили фото из файла! Теперь оно доступно по ссылке {}'.format(photo_url)
+            elif re.match('.+\.[a-z]{2,}/.+\.(jpg|jpeg|png)', ctx.text.strip()):
+                ctx.response = random.choice([
+                    'Отлично! Мне нравится эта фотография.',
+                    'Спасибо! Очень красивое фото.',
+                    'Фото успешно добавлено! Кстати, вы тут хорошо выглядите.',
+                    'Вау! А вы тут зачётно выглядите \U0001f60a'
+                ])
+                photo_url = ctx.text.strip()
+            else:
+                # todo: try to extract real photo from html or even a page
+                ctx.response = 'Этот текст не очень похож на ссылку на фото.' \
+                               '\nПока что я запомню эту ссылку.' \
+                               '\nНо пожалуйста, проверьте потом, что фото нормально отображается на вашей страничке ПБ.' \
+                               '\nЖелательно проверить в инкогнито режиме браузера (фото может быть доступно только вам).'
+                ctx.response = ctx.response + '\nКак загружать фото:\n' + PHOTO_INSTRUCTION + '\n\n'
+                photo_url = ctx.text.strip()
+            database.mongo_peoplebook.update_one(
+                {'username': ctx.user_object['username']}, {'$set': {'photo': photo_url}}
+            )
         ctx.expected_intent = PB.PEOPLEBOOK_SET_CONTACTS if within else PB.PEOPLEBOOK_SHOW_PROFILE
     elif ctx.last_expected_intent == PB.PEOPLEBOOK_SET_CONTACTS:
         ctx.intent = PB.PEOPLEBOOK_SET_CONTACTS
