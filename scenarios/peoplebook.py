@@ -124,7 +124,8 @@ def try_peoplebook_management(ctx: Context, database: Database):
         try:
             photo_url = photo_url_from_message(message=ctx.message, bot=ctx.bot)
         except Exception:
-            ctx.response = 'Произошла какая-то ошибка при загрузке фото. Попробуйте загрузить фото на хостинг самостоятельно и скинуть мне его URL'
+            ctx.response = 'Произошла какая-то ошибка при загрузке фото. ' \
+                           'Попробуйте загрузить фото на хостинг самостоятельно и скинуть мне его URL'
         else:
             if photo_url is not None:
                 ctx.response = 'Ура, вы загрузили фото из файла! Теперь оно доступно по ссылке {}'.format(photo_url)
@@ -140,8 +141,10 @@ def try_peoplebook_management(ctx: Context, database: Database):
                 # todo: try to extract real photo from html or even a page
                 ctx.response = 'Этот текст не очень похож на ссылку на фото.' \
                                '\nПока что я запомню эту ссылку.' \
-                               '\nНо пожалуйста, проверьте потом, что фото нормально отображается на вашей страничке ПБ.' \
-                               '\nЖелательно проверить в инкогнито режиме браузера (фото может быть доступно только вам).'
+                               '\nНо пожалуйста, проверьте потом, что фото ' \
+                               'нормально отображается на вашей страничке ПБ.' \
+                               '\nЖелательно проверить в инкогнито режиме ' \
+                               'браузера (фото может быть доступно только вам).'
                 ctx.response = ctx.response + '\nКак загружать фото:\n' + PHOTO_INSTRUCTION + '\n\n'
                 photo_url = ctx.text.strip()
             database.mongo_peoplebook.update_one(
