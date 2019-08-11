@@ -25,6 +25,7 @@ class InvitationStatuses:
     NOT_SENT_OVERDUE = 'NOT_SENT_OVERDUE'
 
     PAYMENT_PAID = 'PAID'
+    PAYMENT_NOT_PAID = 'NOT_PAID'
 
     @classmethod
     def translate(cls, status, payment_status=None):
@@ -525,7 +526,8 @@ EVENT_EDITION_COMMANDS = '\n'.join(
         "/remove_event - удалить событие и отменить все приглашения",
         "/invite_everyone - пригласить всех членов клуба",
         "/invitation_statuses - посмотреть статусы приглашений",
-        "/invitation_statuses_excel - выгрузить статусы приглашений"
+        "/invitation_statuses_excel - выгрузить статусы приглашений",
+        "/report_others_payment - сообщить о статусе оплаты участника",
     ]
 )
 
@@ -607,6 +609,78 @@ def try_event_edition(ctx: Context, database: Database):
         elif matchers.is_like_no(ctx.text_normalized):
             ctx.intent = 'EVENT_REMOVE_NOT_CONFIRM'
             ctx.response = 'Ладно, не буду удалять это событие.'
+    elif ctx.text == '/report_others_payment':
+        ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_INIT'
+        ctx.expected_intent = 'EVENT_OTHER_PAYMENT_STATUS_USERNAME'
+        ctx.response = 'Введите логин участника, оплатившего встречу, о котором вы хотите сделать запись:'
+        ctx.suggests.append('Отмена')
+    elif ctx.last_expected_intent == 'EVENT_OTHER_PAYMENT_STATUS_USERNAME':
+        if ctx.text_normalized == 'отмена':
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_CANCELED'
+            ctx.response = 'Окей, не будем делать запись об оплате\n' + render_full_event(ctx, database, the_event)
+        else:
+            extracted_username = matchers.normalize_username(ctx.text)
+            participation = database.mongo_participations.find_one({'username': extracted_username, 'code': event_code})
+            if participation is None:
+                ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_USER_NOT_FOUND'
+                ctx.response = 'Пользователь @{} не найден либо не приглашен на событие /{}'.format(
+                    extracted_username, event_code
+                )
+            elif participation.get('status') != InvitationStatuses.ACCEPT:
+                ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_USER_NOT_ACCEPTED'
+                ctx.response = 'Пользователь @{} не участвует в событии /{}'.format(
+                    extracted_username, event_code
+                )
+            else:
+                ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_USER_FOUND'
+                ctx.expected_intent = 'EVENT_OTHER_PAYMENT_STATUS_ASK_STATUS'
+                ctx.response = 'Пользователь @{} найден и участвует в событии /{}!' \
+                               '\nОплатил(а) ли он(а) участие? ' \
+                               '\nОтветьте "Да" или "Нет":'.format(extracted_username, event_code)
+                ctx.suggests.extend(['Да', 'Нет', 'Отмена'])
+                ctx.the_update = {'$set': {'target_username': extracted_username}}
+    elif ctx.last_expected_intent == 'EVENT_OTHER_PAYMENT_STATUS_ASK_STATUS':
+        target_username = ctx.user_object.get('target_username')
+        if target_username is None:
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_USERNAME_ERROR'
+            ctx.response = 'Я забыл, о ком мы говорим, простите.\n\n' + render_full_event(ctx, database, the_event)
+        if ctx.text_normalized == 'да':
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_SET_YES'
+            ctx.response = 'Отлично, записали, что @{} оплатил(а) встречу. ' \
+                           'Пожалуйста, следующим сообщением опишите способ оплаты: ' \
+                           'сумма, карта, и т.п.'.format(target_username)
+            ctx.expected_intent = 'EVENT_OTHER_PAYMENT_STATUS_SET_INFO'
+            database.mongo_participations.update_one(
+                {'username': target_username, 'code': event_code},
+                {'$set': {'payment_status': InvitationStatuses.PAYMENT_PAID}}, upsert=True
+            )
+        elif ctx.text_normalized == 'нет':
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_SET_NO'
+            ctx.response = 'Отлично, записали, что @{} не оплатил(а) встречу.\n'.format(target_username) \
+                           + render_full_event(ctx, database, the_event)
+            database.mongo_participations.update_one(
+                {'username': target_username, 'code': event_code},
+                {'$set': {'payment_status': InvitationStatuses.PAYMENT_NOT_PAID}}, upsert=True
+            )
+        elif ctx.text_normalized == 'отмена':
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_CANCEL'
+            ctx.response = 'Хорошо, забьём.\n' + render_full_event(ctx, database, the_event)
+        else:
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_REASK'
+            ctx.expected_intent = 'EVENT_OTHER_PAYMENT_STATUS_ASK_STATUS'
+            ctx.response = 'Пожалуйста, ответьте "Да", "Нет" или "Отмена".'
+    elif ctx.last_expected_intent == 'EVENT_OTHER_PAYMENT_STATUS_SET_INFO':
+        target_username = ctx.user_object.get('target_username')
+        if target_username is None:
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_USERNAME_ERROR'
+            ctx.response = 'Я забыл, о ком мы говорим, простите.\n\n' + render_full_event(ctx, database, the_event)
+        else:
+            ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_SET_INFO'
+            ctx.response = 'Хорошо, запомню эту информацию. Спасибо!\n\n' + render_full_event(ctx, database, the_event)
+            database.mongo_participations.update_one(
+                {'username': target_username, 'code': event_code},
+                {'$set': {'payment_details': ctx.text}}, upsert=True
+            )
     return ctx
 
 
