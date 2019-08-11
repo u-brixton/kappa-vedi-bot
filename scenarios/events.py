@@ -24,8 +24,10 @@ class InvitationStatuses:
     ON_HOLD_OVERDUE = 'ON_HOLD_OVERDUE'
     NOT_SENT_OVERDUE = 'NOT_SENT_OVERDUE'
 
+    PAYMENT_PAID = 'PAID'
+
     @classmethod
-    def translate(cls, status):
+    def translate(cls, status, payment_status=None):
         d = {
             cls.NOT_SENT: 'не получено',
             cls.NOT_ANSWERED: 'без ответа',
@@ -36,7 +38,10 @@ class InvitationStatuses:
             cls.NOT_SENT_OVERDUE: 'так и не получено',
             cls.NOT_ANSWERED_OVERDUE: 'так и нет ответа'
         }
-        return d.get(status, 'какой-то непонятный статус')
+        result = d.get(status, 'какой-то непонятный статус')
+        if status == cls.ACCEPT and payment_status != cls.PAYMENT_PAID:
+            result = result + ' (не оплачено)'
+        return result
 
     @classmethod
     def translate_second_person(cls, status):
@@ -92,6 +97,8 @@ def render_full_event(ctx: Context, database: Database, the_event):
             response = response + '\n /unengage - отказаться от участия'
     if database.is_at_least_member(user_object=ctx.user_object) and is_future:
         response = response + '\n /invite - пригласить гостя'
+    if the_participation.get('payment_status') != InvitationStatuses.PAYMENT_PAID:
+        response = response + '\n /report_payment - сообщить об оплате мероприятия'
     if database.is_admin(user_object=ctx.user_object):
         response = response + EVENT_EDITION_COMMANDS
     return response
@@ -171,6 +178,7 @@ def try_event_usage(ctx: Context, database: Database):
     if not database.is_at_least_guest(ctx.user_object):
         return ctx
     event_code = ctx.user_object.get('event_code')
+    event_user_filter = {'username': ctx.user_object.get('username'), 'code': event_code}
     if re.match('(най[тд]и|пока(жи|зать))( мои| все)? (встреч[уи]|событи[ея]|мероприяти[ея])', ctx.text_normalized):
         ctx.intent = 'EVENT_GET_LIST'
         all_events = list(database.mongo_events.find({}))
@@ -224,7 +232,7 @@ def try_event_usage(ctx: Context, database: Database):
     ):
         ctx.intent = 'EVENT_ENGAGE'
         database.mongo_participations.update_one(
-            {'username': ctx.user_object['username'], 'code': event_code},
+            event_user_filter,
             {'$set': {'status': InvitationStatuses.ACCEPT}}, upsert=True
         )
         ctx.response = 'Теперь вы участвуете в мероприятии {}!'.format(event_code)
@@ -233,10 +241,38 @@ def try_event_usage(ctx: Context, database: Database):
     ):
         ctx.intent = 'EVENT_UNENGAGE'
         database.mongo_participations.update_one(
-            {'username': ctx.user_object['username'], 'code': event_code},
+            event_user_filter,
             {'$set': {'status': InvitationStatuses.REJECT}}, upsert=True
         )
         ctx.response = 'Теперь вы не участвуете в мероприятии {}!'.format(event_code)
+    elif event_code is not None and (
+            ctx.text == '/report_payment' or re.match('^сообщить об оплате$', ctx.text_normalized)
+    ):
+        participation = database.mongo_participations.find_one(event_user_filter)
+        if participation is None or participation.get('status') != InvitationStatuses.ACCEPT:
+            ctx.intent = 'EVENT_REPORT_PAYMENT_NOT_ACCEPTED'
+            ctx.response = 'Кажется, вы ещё не подтвердили участие в событии {}.' \
+                           '\nНадо сначала подтвердить участие, а потом сообщить об оплате'.format(event_code)
+        elif participation.get('payment_status') == InvitationStatuses.PAYMENT_PAID:
+            ctx.intent = 'EVENT_REPORT_PAYMENT_ALREADY_PAID'
+            ctx.response = 'Кажется, вы уже оплатили своё участие в событии {}. ' \
+                           'Больше платить не нужно! :)'.format(event_code)
+        else:
+            ctx.intent = 'EVENT_REPORT_PAYMENT_CONFIRM'
+            ctx.expected_intent = 'EVENT_REPORT_PAYMENT_DETAILS'
+            ctx.response = 'Спасибо за своевременную оплату участия! ' \
+                           '\nПожалуйста, кратко опишите в следующем сообщении свой способ оплаты ' \
+                           '(на какую карту; сколько; кто оплатил, если не вы):'
+            database.mongo_participations.update_one(
+                event_user_filter, {'$set': {'payment_status': InvitationStatuses.PAYMENT_PAID}}, upsert=True
+            )
+    elif ctx.last_expected_intent == 'EVENT_REPORT_PAYMENT_DETAILS':
+        ctx.response = 'Спасибо за предоставленную информацию. \nЕсли вы есть, будьте первыми!'
+        ctx.intent = 'EVENT_REPORT_PAYMENT_DETAILS'
+        database.mongo_participations.update_one(
+            event_user_filter, {'$set': {'payment_details': ctx.text}}, upsert=True
+        )
+        # todo: add a button "return to the event"
     elif ctx.text == '/invite':
         if event_code is None:
             ctx.intent = 'EVENT_INVITE_WITHOUT_EVENT'
@@ -539,7 +575,7 @@ def try_event_edition(ctx: Context, database: Database):
         if len(event_members) == 0:
             ctx.response = 'Пока в этой встрече совсем нет участников. Если вы есть, будьте первыми!!!'
         else:
-            statuses = [InvitationStatuses.translate(em['status']) for em in event_members]
+            statuses = [InvitationStatuses.translate(em['status'], em.get('payment_status')) for em in event_members]
             descriptions = '\n'.join([
                 '@{} - {}'.format(em['username'], st) +
                 ('' if 'invitor' not in em or database.is_at_least_member({'username': em['username']})
@@ -701,8 +737,8 @@ def event_to_df(event_code, database):
             get_name(em['username'], database),
             get_membership(em['username'], database, em.get('invitor')),
             'Да',
-            InvitationStatuses.translate(em['status']),
-            '-',
+            InvitationStatuses.translate(em['status'], em.get('payment_status')),
+            em.get('payment_details', '-'),
             em['username'],
         ]
         for em in event_members
