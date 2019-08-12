@@ -8,7 +8,7 @@ from utils.messaging import BaseSender
 
 from scenarios.dog_mode import doggy_style
 
-from response_logic import respond
+from response_logic import respond, PROCESSED_MESSAGES
 
 from telebot.types import Message, User, Chat
 
@@ -50,9 +50,11 @@ def mocked_sender():
     return MockedSender()
 
 
-def make_mocked_message(text, user_id=123, first_name='Юзер', username='a_member'):
+def make_mocked_message(text, user_id=123, first_name='Юзер', username='a_member', message_id=None):
+    if message_id is None:
+        message_id = len(PROCESSED_MESSAGES)
     message = Message(
-        message_id=None,
+        message_id=message_id,
         from_user=User(id=user_id, is_bot=False, first_name=first_name, username=username),
         date=None,
         chat=Chat(id=user_id, type=None),
