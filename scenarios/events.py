@@ -742,16 +742,16 @@ def daily_event_management(database: Database, sender: Callable):
                 continue
             if invitation.get('payment_status') != InvitationStatuses.PAYMENT_PAID and \
                     event['days_to'] in {0, 1, 3, 5, 7, 14, 21}:
-                text = 'Здравствуйте, {}! Осталось всего {} дней до очередной встречи Каппа Веди - \{}.' \
+                text = 'Здравствуйте, {}! Осталось всего {} дней до очередной встречи Каппа Веди - /{}.' \
                        '\nКажется, вы всё ещё не оплатили своё участие во встрече. ' \
                        'Пожалуйста, сделайте это заранее!' \
                        '\n Если вы уже оплатили, пожалуйста, сообщите об этом, ' \
                        'нажав кнопку "Сообщить об оплате".' \
                        '\nЕсли вы есть, будьте первыми!'.format(
-                    user_account.get('first_name', 'товарищ ' + user_account.get('username', 'Анонимус')),
-                    event['days_to'] + 1,
-                    invitation['code']
-                )
+                            user_account.get('first_name', 'товарищ ' + user_account.get('username', 'Анонимус')),
+                            event['days_to'] + 1,
+                            invitation['code']
+                        )
                 intent = EventIntents.PAYMENT_REMINDER
                 suggests = ['Сообщить об оплате'] + make_standard_suggests(database=database, user_object=user_account)
                 if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
