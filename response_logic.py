@@ -10,7 +10,7 @@ from scenarios.dog_mode import doggy_style
 from scenarios.push import try_queued_messages
 from scenarios.membership import try_membership_management
 from scenarios.coffee import try_coffee_management, TAKE_PART, NOT_TAKE_PART
-
+from scenarios.suggests import make_standard_suggests
 
 PROCESSED_MESSAGES = set()
 
@@ -53,16 +53,7 @@ def respond(message, database: Database, sender: BaseSender, bot=None):
     user_object = get_or_insert_user(tg_uid=message.from_user.id, database=database)
 
     # context-independent suggests (they are always below the dependent ones)
-    if database.is_at_least_member(user_object):
-        ctx.suggests.append(TAKE_PART if not user_object.get('wants_next_coffee') else NOT_TAKE_PART)
-
-    if database.is_at_least_guest(user_object):
-        ctx.suggests.append('Покажи встречи')
-        ctx.suggests.append('Мой пиплбук')
-
-    if database.is_admin(user_object):
-        ctx.suggests.append('Создать встречу')
-        ctx.suggests.append('Добавить членов')
+    ctx.suggests.extend(make_standard_suggests(database=database, user_object=user_object))
 
     sender(
         text=ctx.response, reply_to=message, suggests=ctx.suggests, database=database, intent=ctx.intent,

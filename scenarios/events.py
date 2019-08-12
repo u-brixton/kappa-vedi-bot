@@ -1,15 +1,15 @@
-from collections import Counter
-from typing import Callable
-
-from utils.database import Database
-from utils.dialogue_management import Context
-from utils import matchers
-
 import pandas as pd
 import random
 import re
 
+from collections import Counter
 from datetime import datetime, timedelta
+from typing import Callable
+
+from scenarios.suggests import make_standard_suggests
+from utils.database import Database
+from utils.dialogue_management import Context
+from utils import matchers
 
 PEOPLEBOOK_EVENT_ROOT = 'http://kv-peoplebook.herokuapp.com/event/'
 
@@ -76,6 +76,7 @@ class EventIntents:
     ACCEPT = 'ACCEPT'
     REJECT = 'REJECT'
     NORMAL_REMINDER = 'NORMAL_REMINDER'
+    PAYMENT_REMINDER = 'NORMAL_REMINDER'
 
 
 def is_future_event(event, may_be_today=True):
@@ -735,11 +736,30 @@ def daily_event_management(database: Database, sender: Callable):
                 sent_invitation_to_user(
                     username=inv['username'], event_code=event['code'], database=database, sender=sender
                 )
-        if event['days_to'] in {0, 5}:
-            for invitation in sure_invitations:
-                user_account = database.mongo_users.find_one({'username': invitation['username']})
-                if user_account is None:
-                    continue
+        for invitation in sure_invitations:
+            user_account = database.mongo_users.find_one({'username': invitation['username']})
+            if user_account is None:
+                continue
+            if invitation.get('payment_status') != InvitationStatuses.PAYMENT_PAID and \
+                    event['days_to'] in {0, 1, 3, 5, 7, 14, 21}:
+                text = 'Здравствуйте, {}! Осталось всего {} дней до очередной встречи Каппа Веди - \{}.' \
+                       '\nКажется, вы всё ещё не оплатили своё участие во встрече. ' \
+                       'Пожалуйста, сделайте это заранее!' \
+                       '\n Если вы уже оплатили, пожалуйста, сообщите об этом, ' \
+                       'нажав кнопку "Сообщить об оплате".' \
+                       '\nЕсли вы есть, будьте первыми!'.format(
+                    user_account.get('first_name', 'товарищ ' + user_account.get('username', 'Анонимус')),
+                    event['days_to'] + 1,
+                    invitation['code']
+                )
+                intent = EventIntents.PAYMENT_REMINDER
+                suggests = ['Сообщить об оплате'] + make_standard_suggests(database=database, user_object=user_account)
+                if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
+                    database.mongo_users.update_one(
+                        {'username': invitation['username']},
+                        {'$set': {'last_intent': intent, 'event_code': invitation['code']}}
+                    )
+            elif event['days_to'] in {0, 5}:
                 text = 'Здравствуйте, {}! Осталось всего {} дней до очередной встречи Каппа Веди\n'.format(
                     user_account.get('first_name', 'товарищ ' + user_account.get('username', 'Анонимус')),
                     event['days_to'] + 1
@@ -748,7 +768,7 @@ def daily_event_management(database: Database, sender: Callable):
                 text = text + '\nСоветую вам полистать пиплбук встречи заранее, чтобы нетворкаться на ней эффективнее.'
                 text = text + '\nЕсли вы есть, будьте первыми! \U0001f60e'
                 intent = EventIntents.NORMAL_REMINDER
-                suggests = []
+                suggests = make_standard_suggests(database=database, user_object=user_account)
                 if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
                     database.mongo_users.update_one(
                         {'username': invitation['username']},

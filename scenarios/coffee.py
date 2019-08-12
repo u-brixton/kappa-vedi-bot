@@ -58,12 +58,16 @@ def remind_about_coffee(user_obj, matches, database: Database, sender: Callable)
         response = 'На этой неделе вы пьёте кофе {}.\nЕсли вы есть, будьте первыми!'.format(with_whom)
     elif datetime.today().weekday() == 4:  # friday
         response = 'На этой неделе вы, наверное, пили кофе {}.\nКак оно прошло?'.format(with_whom)
+        # todo: remember the feedback (with expected_intent)
     elif datetime.today().weekday() == 0:  # monday
         response = 'Напоминаю, что на этой неделе вы пьёте кофе {}.\n'.format(with_whom) + \
             '\nНадеюсь, вы уже договорились о встрече?	\U0001f609' + \
             '\n(если в минувшую субботу пришло несколько оповещений о кофе, то действительно только последнее)'
     if response is not None:
-        sender(user_id=user_id, text=response, database=database)
+        # avoiding circular imports
+        from scenarios.suggests import make_standard_suggests
+        suggests = make_standard_suggests(database=database, user_object=user_obj)
+        sender(user_id=user_id, text=response, database=database, suggests=suggests)
 
 
 def try_coffee_management(ctx: Context, database: Database):
