@@ -14,6 +14,15 @@ TAKE_PART = 'Участвовать в следующем кофе'
 NOT_TAKE_PART = 'Не участвовать в следующем кофе'
 
 
+def get_coffee_score(text):
+    text = text.lower()
+    if 'участ' in text and ('кофе' in text or 'coffee' in text):
+        if 'не ' in text or 'отказ' in text:
+            return -1
+        return 1
+    return 0
+
+
 def daily_random_coffee(database: Database, sender: Callable):
     if datetime.today().weekday() == 5:  # on saturday, we recalculate the matches
         user_to_matches = generate_good_pairs(database)
@@ -73,7 +82,8 @@ def remind_about_coffee(user_obj, matches, database: Database, sender: Callable)
 def try_coffee_management(ctx: Context, database: Database):
     if not database.is_at_least_member(user_object=ctx.user_object):
         return ctx
-    if ctx.text == TAKE_PART:
+    coffee_score = get_coffee_score(ctx.text)
+    if ctx.text == TAKE_PART or coffee_score == 1:
         if ctx.user_object.get('username') is None:
             ctx.intent = 'COFFEE_NO_USERNAME'
             ctx.response = 'Чтобы участвовать в random coffee, нужно иметь имя пользователя в Телеграме.' \
@@ -84,7 +94,7 @@ def try_coffee_management(ctx: Context, database: Database):
         ctx.the_update = {"$set": {'wants_next_coffee': True}}
         ctx.response = 'Окей, на следующей неделе вы будете участвовать в random coffee!'
         ctx.intent = 'TAKE_PART'
-    elif ctx.text == NOT_TAKE_PART:
+    elif ctx.text == NOT_TAKE_PART or coffee_score == -1:
         ctx.the_update = {"$set": {'wants_next_coffee': False}}
         ctx.response = 'Окей, на следующей неделе вы не будете участвовать в random coffee!'
         ctx.intent = 'NOT_TAKE_PART'
