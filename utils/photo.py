@@ -1,11 +1,12 @@
-
-import os
-
 import cloudinary
 import cloudinary.uploader
+import os
 import re
-
+import requests
 import tempfile
+
+
+IMAGE_FORMATS = {"image/png", "image/jpeg", "image/jpg", "image/gif"}
 
 
 def photo_url_from_message(bot, message):
@@ -56,3 +57,26 @@ def upload_photo_to_cloudinary(full_file_name):
     )
     print('file {} has been successfully uploaded to {}'.format(full_file_name, uploaded.get('url')))
     return uploaded['url']
+
+
+def is_url_image(image_url):
+    if not isinstance(image_url, str):
+        return False
+    if len(image_url) < 3:
+        return False
+    try:
+        r = requests.head(image_url)
+        if r.headers["content-type"] in IMAGE_FORMATS:
+            return True
+    except Exception as e:
+        print(e)
+    return False
+
+
+def extract_photo_url_from_text(text):
+    # todo: take photo from a href, social network profiles, etc
+    url = text.strip()
+    # maybe, re.match('.+\.[a-z]{2,}/.+\.(jpg|jpeg|png)', url.lower())
+    if is_url_image(url):
+        return url
+    return None
