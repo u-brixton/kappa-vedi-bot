@@ -677,7 +677,7 @@ def try_event_edition(ctx: Context, database: Database):
             ctx.response = 'Я забыл, о ком мы говорим, простите.\n\n' + render_full_event(ctx, database, the_event)
         else:
             ctx.intent = 'EVENT_OTHER_PAYMENT_STATUS_SET_INFO'
-            ctx.response = 'Хорошо, запомню эту информацию. Спасибо!\n\n' + render_full_event(ctx, database, the_event)
+            ctx.response = 'Хорошо, запомню эту информацию. Спасибо!'
             database.mongo_participations.update_one(
                 {'username': target_username, 'code': event_code},
                 {'$set': {'payment_details': ctx.text}}, upsert=True
