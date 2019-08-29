@@ -4,7 +4,6 @@ import argparse
 import logging
 import os
 import sentry_sdk
-import sys
 import telebot
 
 from flask import Flask, request
@@ -16,6 +15,7 @@ from scenarios.events import daily_event_management
 from utils.database import Database
 from utils.messaging import TelegramSender
 
+logging.basicConfig(level=logging.INFO)
 
 # The API will not allow more than ~30 messages to different users per second
 TIMEOUT_BETWEEN_MESSAGES = 0.2
@@ -25,9 +25,6 @@ TOKEN = os.environ['TOKEN']
 bot = telebot.TeleBot(TOKEN)
 
 server = Flask(__name__)
-
-server.logger.addHandler(logging.StreamHandler(sys.stdout))
-server.logger.setLevel(logging.ERROR)
 
 TELEBOT_URL = 'telebot_webhook/'
 BASE_URL = 'https://kappa-vedi-bot.herokuapp.com/'

@@ -18,6 +18,9 @@ def split_message(text, max_len=MAX_LEN, sep=MESSAGE_SEPARATOR):
         if len(prefix) <= max_len:
             result.append(prefix.strip())
             continue
+        if prefix.startswith(' ') or prefix.startswith('\n'):
+            chunks.insert(0, prefix[1:])
+            continue
         # todo: try to preserve HTML structure
         sep_pos = prefix[:max_len].rfind('\n\n')
         if sep_pos == -1:

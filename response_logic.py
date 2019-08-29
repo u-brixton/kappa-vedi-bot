@@ -61,6 +61,7 @@ def respond(message, database: Database, sender: BaseSender, bot=None):
     # context-independent suggests (they are always below the dependent ones)
     ctx.suggests.extend(make_standard_suggests(database=database, user_object=user_object))
 
+    logger.info('Start sending an already prepared reply to {}'.format(message.message_id))
     sender(
         text=ctx.response, reply_to=message, suggests=ctx.suggests, database=database, intent=ctx.intent,
         file_to_send=ctx.file_to_send

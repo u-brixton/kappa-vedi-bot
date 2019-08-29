@@ -1,15 +1,31 @@
+import logging
+
 from datetime import datetime
-
 from pymongo import MongoClient
-
 from utils import matchers
 
 
+logger = logging.getLogger(__name__)
+
+
+def make_multidict(items, keyname):
+    result = {}
+    for item in items:
+        key = item[keyname]
+        if key not in result:
+            result[key] = []
+        result[key].append(item)
+    return result
+
+
 class Database:
-    def __init__(self, mongo_url, admins=None):
+    def __init__(self, mongo_url, admins=None, cache_ttl_seconds=10):
         self._setup_client(mongo_url=mongo_url)
         self._setup_collections()
         self._admins = set([] if admins is None else admins)
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self._cache_time = datetime.now()
+        self._update_cache(force=True)
 
     def _setup_client(self, mongo_url):
         self._mongo_client = MongoClient(mongo_url)
@@ -28,6 +44,14 @@ class Database:
         self.message_queue = self._mongo_db.get_collection('message_queue')
         # (username: text, text: text, intent: text, fresh: bool)
 
+    def _update_cache(self, force=False):
+        if not force and (datetime.now() - self._cache_time).total_seconds() < self.cache_ttl_seconds:
+            return
+        logger.info('updating database cache...')
+        self._cache_time = datetime.now()
+        self._cached_mongo_membership = {item['username']: item for item in self.mongo_membership.find({})}
+        self._cached_mongo_participations = make_multidict(self.mongo_participations.find({}), 'username')
+
     def is_at_least_guest(self, user_object):
         return self.is_guest(user_object) or self.is_member(user_object) or self.is_admin(user_object)
 
@@ -42,13 +66,14 @@ class Database:
     def is_member(self, user_object):
         username = user_object.get('username') or ''
         username = username.lower()
-        existing = self.mongo_membership.find_one({'username': username, 'is_member': True})
-        return existing is not None
+        self._update_cache()
+        return self._cached_mongo_membership.get(username, {}).get('is_member')
 
     def is_guest(self, user_object):
         # todo: check case of username here and everywhere
-        existing = self.mongo_participations.find_one({'username': user_object.get('username')})
-        return existing is not None
+        self._update_cache()
+        username = user_object.get('username') or ''
+        return user_object.get(username) in self._cached_mongo_participations
 
 
 class LoggedMessage:

@@ -42,6 +42,7 @@ def mocked_member_uo():
 def mocked_db():
     db = MockedDatabase(mongo_url="no url", admins=['an_admin'])
     db.mongo_membership.insert_one({'username': 'a_member', 'is_member': True})
+    db._update_cache(force=True)
     return db
 
 

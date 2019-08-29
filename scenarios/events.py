@@ -590,7 +590,7 @@ def try_event_edition(ctx: Context, database: Database):
             ctx.response = 'Вот какие статусы участников встречи {}:\n{}\n\n{}'.format(
                 event_code, summary, descriptions
             )
-        ctx.response = ctx.response + '\n\n' + render_full_event(ctx, database, the_event)
+        ctx.response = ctx.response
     elif ctx.text == '/invitation_statuses_excel':
         ctx.intent = 'EVENT_GET_INVITATION_STATUSES_EXCEL'
         ctx.response = 'Формирую выгрузку...'
