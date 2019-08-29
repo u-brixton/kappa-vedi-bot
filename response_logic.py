@@ -1,3 +1,5 @@
+import logging
+
 
 from utils.database import Database, LoggedMessage, get_or_insert_user
 from utils.dialogue_management import Context
@@ -14,9 +16,13 @@ from scenarios.suggests import make_standard_suggests
 
 PROCESSED_MESSAGES = set()
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 
 def respond(message, database: Database, sender: BaseSender, bot=None):
     # todo: make it less dependent on telebot Message class structure
+    logger.info('Got message {} with text {}'.format(message.message_id, message.text))
     if message.message_id in PROCESSED_MESSAGES:
         return
     PROCESSED_MESSAGES.add(message.message_id)
@@ -59,3 +65,4 @@ def respond(message, database: Database, sender: BaseSender, bot=None):
         text=ctx.response, reply_to=message, suggests=ctx.suggests, database=database, intent=ctx.intent,
         file_to_send=ctx.file_to_send
     )
+    logger.info('Sent message with text {} as reply to {}'.format(ctx.response, message.message_id))
