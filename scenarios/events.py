@@ -640,8 +640,8 @@ def try_event_edition(ctx: Context, database: Database):
         else:
             ctx.response = 'Ладно. Я попробовал послать это всем {} подтвержденным участникам, ' \
                            'но в итоге {} не получили сообщение. Им придется написать отдельно'.format(
-                n, ', '.join(['@' + u for u in not_sent])
-            )
+                            n, ', '.join(['@' + u for u in not_sent])
+                            )
     elif ctx.text == '/remove_event':
         ctx.intent = 'EVENT_REMOVE'
         ctx.expected_intent = 'EVENT_REMOVE_CONFIRM'
