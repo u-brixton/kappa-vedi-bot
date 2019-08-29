@@ -99,7 +99,7 @@ def render_full_event(ctx: Context, database: Database, the_event):
             response = response + '\n /unengage - отказаться от участия'
     if database.is_at_least_member(user_object=ctx.user_object) and is_future:
         response = response + '\n /invite - пригласить гостя'
-    if the_participation.get('payment_status') != InvitationStatuses.PAYMENT_PAID:
+    if the_participation is None or the_participation.get('payment_status') != InvitationStatuses.PAYMENT_PAID:
         response = response + '\n /report_payment - сообщить об оплате мероприятия'
     if database.is_admin(user_object=ctx.user_object):
         response = response + EVENT_EDITION_COMMANDS
@@ -529,6 +529,7 @@ EVENT_EDITION_COMMANDS = '\n'.join(
         "/invitation_statuses - посмотреть статусы приглашений",
         "/invitation_statuses_excel - выгрузить статусы приглашений",
         "/report_others_payment - сообщить о статусе оплаты участника",
+        "/broadcast - разослать сообщение всем участникам встречи",
     ]
 )
 
@@ -595,6 +596,52 @@ def try_event_edition(ctx: Context, database: Database):
         ctx.intent = 'EVENT_GET_INVITATION_STATUSES_EXCEL'
         ctx.response = 'Формирую выгрузку...'
         ctx.file_to_send = event_to_file(event_code, database=database)
+    elif ctx.text == '/broadcast':
+        ctx.intent = 'EVENT_BROADCAST'
+        ctx.response = 'Вы точно хотите отправить сообщение всем людям, подтвердившим участие во встрече {}?' \
+                       '\nПожалуйста, ответьте "Да" или "Нет".'.format(event_code)
+        ctx.suggests.insert(0, 'Нет')
+        ctx.suggests.insert(0, 'Да')
+        ctx.expected_intent = 'EVENT_BROADCAST_CONFIRM'
+    elif ctx.last_expected_intent == 'EVENT_BROADCAST_CONFIRM':
+        if matchers.is_like_yes(ctx.text_normalized):
+            ctx.intent = 'EVENT_BROADCAST_CONFIRM_YES'
+            ctx.response = 'Ладно! Введите сообщение, которое получат все люди, подтвердившие участие во встрече.'
+            ctx.expected_intent = 'EVENT_BROADCAST_MESSAGE'
+        elif matchers.is_like_no(ctx.text_normalized):
+            ctx.intent = 'EVENT_BROADCAST_CONFIRM_NO'
+            ctx.response = 'Ну и правильно! Нечего людей зря беспокоить!'
+    elif ctx.last_expected_intent == 'EVENT_BROADCAST_MESSAGE':
+        ctx.intent = 'EVENT_BROADCAST_MESSAGE'
+        participants = list(database.mongo_participations.find(
+            {'code': event_code, 'status': InvitationStatuses.ACCEPT}
+        ))
+        not_sent = []
+        for p in participants:
+            receiver_username = p['username']
+            text = ctx.text
+            intent = 'GET_BROADCASTED_MESSAGE'
+            suggests = ['Ясно', 'Понятно', 'Ничоси', 'Кто ты ваще?']
+            user_account = database.mongo_users.find_one({'username': receiver_username})
+            if user_account is None:
+                not_sent.append(receiver_username)
+            else:
+                if ctx.sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
+                    database.mongo_users.update_one(
+                        {'username': receiver_username},
+                        {'$set': {'last_intent': intent, 'event_code': event_code}}
+                    )
+                else:
+                    not_sent.append(receiver_username)
+        n = len(participants)
+        if len(not_sent) == 0:
+            ctx.response = 'Окей. Я отправил это сообщение всем {} подтвержденным участникам встречи. ' \
+                           'Вы сами напросились!'.format(n)
+        else:
+            ctx.response = 'Ладно. Я попробовал послать это всем {} подтвержденным участникам, ' \
+                           'но в итоге {} не получили сообщение. Им придется написать отдельно'.format(
+                n, ', '.join(['@' + u for u in not_sent])
+            )
     elif ctx.text == '/remove_event':
         ctx.intent = 'EVENT_REMOVE'
         ctx.expected_intent = 'EVENT_REMOVE_CONFIRM'
