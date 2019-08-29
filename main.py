@@ -23,6 +23,10 @@ TOKEN = os.environ['TOKEN']
 bot = telebot.TeleBot(TOKEN)
 
 server = Flask(__name__)
+
+server.logger.addHandler(logging.StreamHandler(sys.stdout))
+server.logger.setLevel(logging.ERROR)
+
 TELEBOT_URL = 'telebot_webhook/'
 BASE_URL = 'https://kappa-vedi-bot.herokuapp.com/'
 
