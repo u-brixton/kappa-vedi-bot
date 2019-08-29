@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sentry_sdk
+import sys
 import telebot
 
 from flask import Flask, request
