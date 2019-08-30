@@ -73,7 +73,7 @@ class Database:
         # todo: check case of username here and everywhere
         self._update_cache()
         username = user_object.get('username') or ''
-        return user_object.get(username) in self._cached_mongo_participations
+        return username in self._cached_mongo_participations
 
 
 class LoggedMessage:
