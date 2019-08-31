@@ -613,6 +613,14 @@ def try_event_edition(ctx: Context, database: Database):
             ctx.response = 'Ну и правильно! Нечего людей зря беспокоить!'
     elif ctx.last_expected_intent == 'EVENT_BROADCAST_MESSAGE':
         ctx.intent = 'EVENT_BROADCAST_MESSAGE'
+        broadcast_warning = 'Окей, я начинаю рассылку вашего текста. Это может занять пару минут, придётся подождать.' \
+                            '\nПрошу вас, не трогайте ничего и молчите, пока я не закончу.' \
+                            '\nКогда я завершу рассылку, я отпишусь.'
+        database.mongo_users.update_one(
+            {'username': ctx.user_object.get('username')},
+            {'$set': {'last_expected_intent': None}}
+        )  # without this update, the next message from this user may get broadcasted as well
+        ctx.sender(text=broadcast_warning, database=database, suggests=[], user_id=ctx.user_object['tg_id'])
         participants = list(database.mongo_participations.find(
             {'code': event_code, 'status': InvitationStatuses.ACCEPT}
         ))
