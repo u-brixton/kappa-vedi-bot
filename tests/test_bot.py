@@ -7,6 +7,7 @@ from utils.database import Database
 from utils.messaging import BaseSender
 
 from scenarios.dog_mode import doggy_style
+from scenarios.coffee import TAKE_PART, NOT_TAKE_PART
 
 from response_logic import respond, PROCESSED_MESSAGES
 
@@ -20,9 +21,10 @@ class MockedDatabase(Database):
 
 
 class MockedMessage:
-    def __init__(self, text, intent):
+    def __init__(self, text, intent, suggests):
         self.text = text
         self.intent = intent
+        self.suggests = suggests
 
 
 class MockedSender(BaseSender):
@@ -30,7 +32,10 @@ class MockedSender(BaseSender):
         self.sent_messages = []
 
     def __call__(self, *args, **kwargs):
-        self.sent_messages.append(MockedMessage(text=kwargs['text'], intent=kwargs.get('intent')))
+        self.sent_messages.append(MockedMessage(
+            text=kwargs['text'], intent=kwargs.get('intent'),
+            suggests=kwargs.get('suggests', [])
+        ))
 
 
 @pytest.fixture()
@@ -42,6 +47,8 @@ def mocked_member_uo():
 def mocked_db():
     db = MockedDatabase(mongo_url="no url", admins=['an_admin'])
     db.mongo_membership.insert_one({'username': 'a_member', 'is_member': True})
+    db.mongo_events.insert_one({'code': 'an_event', 'title': 'An Event', 'date': '2030.12.30'})
+    db.mongo_participations.insert_one({'event_code': 'an_event', 'username': 'a_guest'})
     db._update_cache(force=True)
     return db
 
@@ -126,3 +133,32 @@ def test_admin(mocked_sender, mocked_db, text, expected_intent):
     assert len(mocked_sender.sent_messages) == 1
     last_message = mocked_sender.sent_messages[-1]
     assert last_message.intent == expected_intent
+
+
+def test_roles(mocked_db):
+    assert mocked_db.is_at_least_guest({'username': 'a_guest'})
+    assert not mocked_db.is_at_least_member({'username': 'a_guest'})
+
+
+def test_guest_can_see_coffee(mocked_sender, mocked_db):
+    respond(
+        message=make_mocked_message('привет', username='a_guest'),
+        database=mocked_db,
+        sender=mocked_sender
+    )
+    assert len(mocked_sender.sent_messages) == 1
+    last_message = mocked_sender.sent_messages[-1]
+    assert last_message.intent == 'HELLO'
+    assert TAKE_PART in last_message.suggests
+    assert NOT_TAKE_PART not in last_message.suggests
+
+    respond(
+        message=make_mocked_message(TAKE_PART, username='a_guest'),
+        database=mocked_db,
+        sender=mocked_sender
+    )
+    assert len(mocked_sender.sent_messages) == 2
+    last_message = mocked_sender.sent_messages[-1]
+    assert last_message.intent == 'TAKE_PART'
+    assert TAKE_PART not in last_message.suggests
+    assert NOT_TAKE_PART in last_message.suggests

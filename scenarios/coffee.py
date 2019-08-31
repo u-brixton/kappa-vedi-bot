@@ -82,8 +82,6 @@ def remind_about_coffee(user_obj, matches, database: Database, sender: Callable)
 def try_coffee_management(ctx: Context, database: Database):
     if not database.is_at_least_guest(user_object=ctx.user_object):
         return ctx
-    if date.today() < date(2019, 8, 31) and not database.is_at_least_member(user_object=ctx.user_object):
-        return ctx
     coffee_score = get_coffee_score(ctx.text)
     if ctx.text == TAKE_PART or coffee_score == 1:
         if ctx.user_object.get('username') is None:
