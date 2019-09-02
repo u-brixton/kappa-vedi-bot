@@ -834,7 +834,7 @@ def daily_event_management(database: Database, sender: Callable):
             {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
         )
         # todo: unlock it after we change the text
-        #for invitation in sure_invitations:
+        # for invitation in sure_invitations:
         #    user_account = database.mongo_users.find_one({'username': invitation['username']})
         #    if user_account is None:
         #        continue
