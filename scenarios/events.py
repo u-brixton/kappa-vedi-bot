@@ -833,21 +833,22 @@ def daily_event_management(database: Database, sender: Callable):
         sure_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
         )
-        for invitation in sure_invitations:
-            user_account = database.mongo_users.find_one({'username': invitation['username']})
-            if user_account is None:
-                continue
-            if database.is_at_least_member(user_object=user_account):
-                # we send notifications only to guests of an event.
-                continue
-            text = "Привет!\n" \
-                   "Надеюсь, тебе понравилась вчерашняя встреча Каппа Веди?\n" \
-                   "В любом случае, мы будем рады, если ты оставишь свою обратную связь о встрече." \
-                   "Для этого мы сделали небольшую анкету, минут на 3-5: http://bit.ly/kvfeedback.\n" \
-                   "Если ты хочешь присоединиться клубу, ты можешь заполнить заявку на вступление" \
-                   "по ссылке http://bit.ly/welcome2kv. Мы рассмотрим её на ближайшей оргвстрече клуба.\n" \
-                   "Спасибо за участие во встрече клуба. Если вы есть, будьте первыми!"
-            sender(text=text, database=database, user_id=user_account['tg_id'])
+        # todo: unlock it after we change the text
+        # for invitation in sure_invitations:
+        #    user_account = database.mongo_users.find_one({'username': invitation['username']})
+        #    if user_account is None:
+        #        continue
+        #    if database.is_at_least_member(user_object=user_account):
+        #        # we send notifications only to guests of an event.
+        #        continue
+        #    text = "Привет!\n" \
+        #           "Надеюсь, тебе понравилась вчерашняя встреча Каппа Веди?\n" \
+        #           "В любом случае, мы будем рады, если ты оставишь свою обратную связь о встрече." \
+        #           "Для этого мы сделали небольшую анкету, минут на 3-5: http://bit.ly/kvfeedback.\n" \
+        #           "Если ты хочешь присоединиться клубу, ты можешь заполнить заявку на вступление" \
+        #           "по ссылке http://bit.ly/welcome2kv. Мы рассмотрим её на ближайшей оргвстрече клуба.\n" \
+        #           "Спасибо за участие во встрече клуба. Если вы есть, будьте первыми!"
+        #    sender(text=text, database=database, user_id=user_account['tg_id'])
     for event in past_events:
         undecided_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': {'$in': list(InvitationStatuses.undecided_states())}}
