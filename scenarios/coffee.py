@@ -76,7 +76,8 @@ def remind_about_coffee(user_obj, matches, database: Database, sender: Callable)
         # avoiding circular imports
         from scenarios.suggests import make_standard_suggests
         suggests = make_standard_suggests(database=database, user_object=user_obj)
-        sender(user_id=user_id, text=response, database=database, suggests=suggests)
+        sender(user_id=user_id, text=response, database=database, suggests=suggests,
+               reset_intent=True, intent='coffee_push')
 
 
 def try_coffee_management(ctx: Context, database: Database):

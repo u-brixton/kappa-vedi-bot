@@ -47,6 +47,7 @@ class BaseSender:
             intent=None,
             meta=None,
             file_to_send=None,
+            reset_intent=False,
     ):
         raise NotImplementedError
 
@@ -65,7 +66,8 @@ class TelegramSender(BaseSender):
             intent=None,
             meta=None,
             username=None,
-            file_to_send=None
+            file_to_send=None,
+            reset_intent=False,
     ):
         try:
             markup = render_markup(suggests)
@@ -89,7 +91,11 @@ class TelegramSender(BaseSender):
                 text=text, user_id=user_id, from_user=False, database=database,
                 intent=intent, meta=meta, username=username
             ).save()
-            # todo: actually save intent and meta
+            if reset_intent:
+                database.mongo_users.update_one(
+                    {'tg_id': user_id},
+                    {'$set': {'last_expected_intent': None, 'last_intent': 'intent' or 'probably_some_push'}}
+                )
             if self.timeout:
                 time.sleep(self.timeout)
             return True

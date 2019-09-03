@@ -342,7 +342,7 @@ def sent_invitation_to_user(username, event_code, database: Database, sender: Ca
     if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
         database.mongo_users.update_one(
             {'username': username},
-            {'$set': {'last_intent': intent, 'event_code': event_code}}
+            {'$set': {'last_intent': intent, 'event_code': event_code, 'last_expected_intent': None}}
         )
         if invitation.get('status') == InvitationStatuses.NOT_SENT:
             database.mongo_participations.update_one(
@@ -427,7 +427,7 @@ def try_event_creation(ctx: Context, database: Database):
         ctx.suggests.append('Отменить создание встречи')
     elif ctx.last_expected_intent == EventCreationIntents.SET_DATE:
         ctx.intent = EventCreationIntents.SET_DATE
-        if not re.match('^20\d\d\.[01]\d\.[0123]\d$', ctx.text):
+        if not re.match(r'^20\d\d\.[01]\d\.[0123]\d$', ctx.text):
             ctx.expected_intent = EventCreationIntents.SET_DATE
             ctx.response = 'Дата должна быть в формате ГГГГ.ММ.ДД (типа 2020.03.05). Попробуйте ещё раз!'
             ctx.suggests.append('Отменить создание встречи')
@@ -634,11 +634,9 @@ def try_event_edition(ctx: Context, database: Database):
             if user_account is None:
                 not_sent.append(receiver_username)
             else:
-                if ctx.sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
-                    database.mongo_users.update_one(
-                        {'username': receiver_username},
-                        {'$set': {'last_intent': intent, 'event_code': event_code}}
-                    )
+                if ctx.sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id'],
+                              reset_intent=True, intent=intent):
+                    pass
                 else:
                     not_sent.append(receiver_username)
         n = len(participants)
@@ -812,7 +810,8 @@ def daily_event_management(database: Database, sender: Callable):
                 if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
                     database.mongo_users.update_one(
                         {'username': invitation['username']},
-                        {'$set': {'last_intent': intent, 'event_code': invitation['code']}}
+                        {'$set': {'last_intent': intent, 'event_code': invitation['code'],
+                                  'last_expected_intent': None}}
                     )
             elif event['days_to'] in {0, 5}:
                 text = 'Здравствуйте, {}! Осталось всего {} дней до очередной встречи Каппа Веди\n'.format(
@@ -827,7 +826,8 @@ def daily_event_management(database: Database, sender: Callable):
                 if sender(text=text, database=database, suggests=suggests, user_id=user_account['tg_id']):
                     database.mongo_users.update_one(
                         {'username': invitation['username']},
-                        {'$set': {'last_intent': intent, 'event_code': invitation['code']}}
+                        {'$set': {'last_intent': intent, 'event_code': invitation['code'],
+                                  'last_expected_intent': None}}
                     )
     for event in yesterday_events:
         sure_invitations = database.mongo_participations.find(
@@ -848,7 +848,8 @@ def daily_event_management(database: Database, sender: Callable):
         #           "Если ты хочешь присоединиться клубу, ты можешь заполнить заявку на вступление" \
         #           "по ссылке http://bit.ly/welcome2kv. Мы рассмотрим её на ближайшей оргвстрече клуба.\n" \
         #           "Спасибо за участие во встрече клуба. Если вы есть, будьте первыми!"
-        #    sender(text=text, database=database, user_id=user_account['tg_id'])
+        #    sender(text=text, database=database, user_id=user_account['tg_id'], reset_intent=True,
+        #           intent='event_feedback_push')
     for event in past_events:
         undecided_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': {'$in': list(InvitationStatuses.undecided_states())}}
