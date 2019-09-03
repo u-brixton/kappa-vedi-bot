@@ -8,7 +8,7 @@ import telebot
 
 from flask import Flask, request
 
-from config import ADMIN_UID
+import config
 from response_logic import respond
 from scenarios.coffee import daily_random_coffee
 from scenarios.events import daily_event_management
@@ -35,7 +35,15 @@ DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibek
 if os.environ.get('SENTRY_DSN'):
     sentry_sdk.init(os.environ.get('SENTRY_DSN'))
 
-SENDER = TelegramSender(bot, admin_uid=ADMIN_UID, timeout=TIMEOUT_BETWEEN_MESSAGES)
+SENDER = TelegramSender(bot, config=config, timeout=TIMEOUT_BETWEEN_MESSAGES)
+
+
+ALL_CONTENT_TYPES = [
+    'audio', 'channel_chat_created', 'contact', 'delete_chat_photo', 'document', 'group_chat_created',
+    'left_chat_member',
+    'location', 'migrate_from_chat_id', 'migrate_to_chat_id', 'new_chat_members', 'new_chat_photo', 'new_chat_title',
+    'photo', 'pinned_message', 'sticker', 'supergroup_chat_created', 'text', 'video', 'video_note', 'voice'
+]
 
 
 @server.route("/" + TELEBOT_URL)
@@ -60,7 +68,7 @@ def do_event_management():
     return "Сделал со встречами всё, что хотел!", 200
 
 
-@bot.message_handler(func=lambda message: True, content_types=['document', 'text', 'photo'])
+@bot.message_handler(func=lambda message: True, content_types=ALL_CONTENT_TYPES)
 def process_message(msg):
     respond(message=msg, database=DATABASE, sender=SENDER, bot=bot)
 

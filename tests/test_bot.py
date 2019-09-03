@@ -65,7 +65,7 @@ def make_mocked_message(text, user_id=123, first_name='Юзер', username='a_me
         message_id=message_id,
         from_user=User(id=user_id, is_bot=False, first_name=first_name, username=username),
         date=None,
-        chat=Chat(id=user_id, type=None),
+        chat=Chat(id=user_id, type='private'),
         content_type=None,
         options={},
         json_string=None

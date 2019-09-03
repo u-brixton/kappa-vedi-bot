@@ -73,6 +73,10 @@ class Database:
         # todo: check case of username here and everywhere
         self._update_cache()
         username = user_object.get('username') or ''
+        if self._cached_mongo_membership.get(username, {}).get('is_guest'):
+            return True
+        if self._cached_mongo_membership.get(username, {}).get('is_member'):
+            return True
         return username in self._cached_mongo_participations
 
 

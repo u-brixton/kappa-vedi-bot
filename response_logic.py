@@ -11,7 +11,7 @@ from scenarios.conversation import try_conversation, fallback
 from scenarios.dog_mode import doggy_style
 from scenarios.push import try_queued_messages
 from scenarios.membership import try_membership_management
-from scenarios.coffee import try_coffee_management, TAKE_PART, NOT_TAKE_PART
+from scenarios.coffee import try_coffee_management
 from scenarios.suggests import make_standard_suggests
 
 PROCESSED_MESSAGES = set()
@@ -22,10 +22,28 @@ logger.setLevel(logging.DEBUG)
 
 def respond(message, database: Database, sender: BaseSender, bot=None):
     # todo: make it less dependent on telebot Message class structure
-    logger.info('Got message {} with text {}'.format(message.message_id, message.text))
+    logger.info('Got message {} with type {} and text {}'.format(
+        message.message_id, message.content_type, message.text
+    ))
     if message.message_id in PROCESSED_MESSAGES:
         return
     PROCESSED_MESSAGES.add(message.message_id)
+
+    if message.chat.type != 'private':
+        print(message.chat)
+        if not message.from_user or not message.chat.id:
+            return
+        uo = get_or_insert_user(message.from_user, database=database)
+        if not uo.get('username'):
+            return
+        user_filter = {'username': uo['username']}
+        if message.chat.id == sender.config.MAIN_CHAT_ID:
+            print('adding user {} to the community members'.format(user_filter))
+            database.mongo_membership.update_one(user_filter, {'$set': {'is_guest': True}}, upsert=True)
+        elif message.chat.id == sender.config.FIRST_CHAT_ID:
+            database.mongo_membership.update_one(user_filter, {'$set': {'is_member': True}}, upsert=True)
+            print('adding user {} to the club members'.format(user_filter))
+        return
 
     if bot is not None:
         bot.send_chat_action(message.chat.id, 'typing')

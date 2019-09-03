@@ -52,9 +52,10 @@ class BaseSender:
 
 
 class TelegramSender(BaseSender):
-    def __init__(self, bot, admin_uid=None, timeout=0):
+    def __init__(self, bot, config=None, timeout=0):
         self.bot = bot
-        self.admin_uid = admin_uid
+        self.config = config
+        self.admin_uid = config.ADMIN_UID
         self.timeout = timeout
 
     def __call__(
