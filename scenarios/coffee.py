@@ -58,9 +58,17 @@ def daily_random_coffee(database: Database, sender: Callable):
 
 def remind_about_coffee(user_obj, matches, database: Database, sender: Callable):
     user_id = user_obj['tg_id']
-    with_whom = 'с @{}'.format(matches[0])
-    for next_match in matches[1:]:
-        with_whom = with_whom + ' и c @{}'.format(next_match)
+    match_texts = []
+    for m in matches:
+        in_pb = database.mongo_peoplebook.find_one({'username': m})
+        if in_pb:
+            match_texts.append('@{} (<a href="http://kv-peoplebook.herokuapp.com/person/{}">пиплбук</a>)'.format(m, m))
+        else:
+            match_texts.append('@{}'.format(m))
+
+    with_whom = 'с {}'.format(match_texts[0])
+    for next_match in match_texts[1:]:
+        with_whom = with_whom + ' и c {}'.format(next_match)
 
     response = None
     if datetime.today().weekday() == 5:  # saturday
@@ -73,6 +81,12 @@ def remind_about_coffee(user_obj, matches, database: Database, sender: Callable)
             '\nНадеюсь, вы уже договорились о встрече?	\U0001f609' + \
             '\n(если в минувшую субботу пришло несколько оповещений о кофе, то действительно только последнее)'
     if response is not None:
+        user_in_pb = database.mongo_peoplebook.find_one({'username': user_obj.get('username')})
+        if not user_in_pb:
+            response = response + '\n\nКстати, кажется, вас нет в пиплбуке, а жаль: ' \
+                                  'с пиплбуком даже незнакомому собеседнику проще будет начать с вами общение.' \
+                                  '\nПожалуйста, когда будет время, напишите мне "мой пиплбук" ' \
+                                  'и заполните свою страничку.\nЕсли вы есть, будьте первыми!'
         # avoiding circular imports
         from scenarios.suggests import make_standard_suggests
         suggests = make_standard_suggests(database=database, user_object=user_obj)
