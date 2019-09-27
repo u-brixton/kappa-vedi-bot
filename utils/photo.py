@@ -74,11 +74,10 @@ def is_url_image(image_url):
 
 
 def extract_photo_url_from_text(text):
-    url = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$_@&+.\-~/]|[!*\(\),]|(?:%[0-9a-fA-F]'
-                     '[0-9a-fA-F]))+(?:\.jpg|\.jpeg|\.png)', text)
-    if len(url) == 0:
-        return None
-    elif is_url_image(url[0]):
-        return url
-    else:
-        return None
+    urls = re.findall('(?:http[s]?://|src="//)(?:[a-zA-Z]|[0-9]|[$_@&+.\-~/]|[!*\(\),]|(?:%[0-9a-fA-F]'
+                      '[0-9a-fA-F]))+', text)
+    for url in urls:
+        img_url = url.replace('src="//', 'http://')
+        if is_url_image(img_url):
+            return img_url
+    return None
