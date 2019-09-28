@@ -19,11 +19,11 @@ def is_like_telegram_login(text):
 
 
 def is_like_yes(text):
-    return bool(re.match('да|ага|конечно', text))
+    return bool(re.match('да|ага|конечно|yes|ес', text))
 
 
 def is_like_no(text):
-    return bool(re.match('нет', text))
+    return bool(re.match('нет|no|nope', text))
 
 
 def normalize_username(username):
