@@ -74,9 +74,10 @@ def is_url_image(image_url):
 
 
 def extract_photo_url_from_text(text):
-    # todo: take photo from a href, social network profiles, etc
-    url = text.strip()
-    # maybe, re.match('.+\.[a-z]{2,}/.+\.(jpg|jpeg|png)', url.lower())
-    if is_url_image(url):
-        return url
+    urls = re.findall('(?:http[s]?://|src="//)(?:[a-zA-Z]|[0-9]|[$_@&+.\-~/]|[!*\(\),]|(?:%[0-9a-fA-F]'
+                      '[0-9a-fA-F]))+', text)
+    for url in urls:
+        img_url = url.replace('src="//', 'http://')
+        if is_url_image(img_url):
+            return img_url
     return None
