@@ -1,6 +1,7 @@
 import pandas as pd
 import random
 import re
+import time
 
 from collections import Counter
 from datetime import datetime, timedelta
@@ -789,6 +790,7 @@ def daily_event_management(database: Database, sender: Callable):
                 sent_invitation_to_user(
                     username=inv['username'], event_code=event['code'], database=database, sender=sender
                 )
+                time.sleep(0.5)
         for invitation in sure_invitations:
             user_account = database.mongo_users.find_one({'username': invitation['username']})
             if user_account is None:
@@ -813,6 +815,7 @@ def daily_event_management(database: Database, sender: Callable):
                         {'$set': {'last_intent': intent, 'event_code': invitation['code'],
                                   'last_expected_intent': None}}
                     )
+                time.sleep(0.5)
             elif event['days_to'] in {0, 5}:
                 text = 'Здравствуйте, {}! Осталось всего {} дней до очередной встречи Каппа Веди\n'.format(
                     user_account.get('first_name', 'товарищ ' + user_account.get('username', 'Анонимус')),
@@ -829,6 +832,7 @@ def daily_event_management(database: Database, sender: Callable):
                         {'$set': {'last_intent': intent, 'event_code': invitation['code'],
                                   'last_expected_intent': None}}
                     )
+                time.sleep(0.5)
     for event in yesterday_events:
         sure_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': InvitationStatuses.ACCEPT}
@@ -850,6 +854,7 @@ def daily_event_management(database: Database, sender: Callable):
         #           "Спасибо за участие во встрече клуба. Если вы есть, будьте первыми!"
         #    sender(text=text, database=database, user_id=user_account['tg_id'], reset_intent=True,
         #           intent='event_feedback_push')
+        #            time.sleep(0.5)
     for event in past_events:
         undecided_invitations = database.mongo_participations.find(
             {'code': event['code'], 'status': {'$in': list(InvitationStatuses.undecided_states())}}

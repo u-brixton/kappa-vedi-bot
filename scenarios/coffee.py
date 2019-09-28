@@ -10,6 +10,8 @@ from scenarios.coffee_match_maker import generate_good_pairs
 
 from config import ADMIN_UID
 
+import time
+
 TAKE_PART = 'Участвовать в следующем кофе'
 NOT_TAKE_PART = 'Не участвовать в следующем кофе'
 
@@ -54,6 +56,7 @@ def daily_random_coffee(database: Database, sender: Callable):
                 )
             else:
                 remind_about_coffee(user_obj, matches, database=database, sender=sender)
+                time.sleep(0.5)
 
 
 def remind_about_coffee(user_obj, matches, database: Database, sender: Callable):
