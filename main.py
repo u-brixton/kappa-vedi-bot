@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import random
 import sentry_sdk
 import telebot
 
@@ -35,6 +36,8 @@ DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibek
 if os.environ.get('SENTRY_DSN'):
     sentry_sdk.init(os.environ.get('SENTRY_DSN'))
 
+ADMIN_URL_PREFIX = os.environ.get('ADMIN_URL_PREFIX') or str(random.random())
+
 SENDER = TelegramSender(bot, config=config, timeout=TIMEOUT_BETWEEN_MESSAGES)
 
 
@@ -60,6 +63,12 @@ def wake_up():
     daily_random_coffee(database=DATABASE, sender=SENDER)
     daily_event_management(database=DATABASE, sender=SENDER)
     return "Маам, ну ещё пять минуточек!", 200
+
+
+@server.route("/{}/restart-coffee/".format(ADMIN_URL_PREFIX))
+def force_restart_coffee():
+    daily_random_coffee(database=DATABASE, sender=SENDER, force_restart=True)
+    return "Кофе перезапущен!", 200
 
 
 @server.route("/send-events/")
