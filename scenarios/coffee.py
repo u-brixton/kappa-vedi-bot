@@ -25,8 +25,8 @@ def get_coffee_score(text):
     return 0
 
 
-def daily_random_coffee(database: Database, sender: Callable):
-    if datetime.today().weekday() == 5:  # on saturday, we recalculate the matches
+def daily_random_coffee(database: Database, sender: Callable, force_restart=False):
+    if force_restart or datetime.today().weekday() == 5:  # on saturday, we recalculate the matches
         user_to_matches = generate_good_pairs(database)
         database.mongo_coffee_pairs.insert_one({'date': str(datetime.utcnow()), 'matches': user_to_matches})
 
@@ -55,11 +55,11 @@ def daily_random_coffee(database: Database, sender: Callable):
                     user_id=ADMIN_UID, database=database, notify_on_error=False
                 )
             else:
-                remind_about_coffee(user_obj, matches, database=database, sender=sender)
+                remind_about_coffee(user_obj, matches, database=database, sender=sender, force_restart=force_restart)
                 time.sleep(0.5)
 
 
-def remind_about_coffee(user_obj, matches, database: Database, sender: Callable):
+def remind_about_coffee(user_obj, matches, database: Database, sender: Callable, force_restart=False):
     user_id = user_obj['tg_id']
     match_texts = []
     for m in matches:
@@ -74,7 +74,7 @@ def remind_about_coffee(user_obj, matches, database: Database, sender: Callable)
         with_whom = with_whom + ' и c {}'.format(next_match)
 
     response = None
-    if datetime.today().weekday() == 5:  # saturday
+    if force_restart or datetime.today().weekday() == 5:  # saturday
         response = 'На этой неделе вы пьёте кофе {}.\nЕсли вы есть, будьте первыми!'.format(with_whom)
     elif datetime.today().weekday() == 4:  # friday
         response = 'На этой неделе вы, наверное, пили кофе {}.\nКак оно прошло?'.format(with_whom)
