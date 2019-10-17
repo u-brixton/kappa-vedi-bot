@@ -31,7 +31,9 @@ TELEBOT_URL = 'telebot_webhook/'
 BASE_URL = 'https://kappa-vedi-bot.herokuapp.com/'
 
 MONGO_URL = os.environ.get('MONGODB_URI')
-DATABASE = Database(MONGO_URL, admins={'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton'})
+DATABASE = Database(MONGO_URL, admins={
+    'cointegrated', 'stepan_ivanov', 'jonibekortikov', 'dkkharlm', 'helmeton', 'kolikovnikita',
+})
 
 if os.environ.get('SENTRY_DSN'):
     sentry_sdk.init(os.environ.get('SENTRY_DSN'))
