@@ -117,3 +117,42 @@ def try_coffee_management(ctx: Context, database: Database):
         ctx.response = 'Окей, на следующей неделе вы не будете участвовать в random coffee!'
         ctx.intent = 'NOT_TAKE_PART'
     return ctx
+
+
+def try_advanced_coffee(ctx: Context, database: Database):
+    if ctx.text_normalized=='тест кофе':
+        ctx.intent = 'COFFEE_SURVEY'
+        ctx.suggests=['Да','Нет']
+        ctx.response="Закончилась предыдущая неделя [DATE]. Вам удалось встретиться на кофе?"
+        
+    elif ctx.last_intent=='COFFEE_SURVEY':
+        
+        if ctx.text_normalized=='да':
+            ctx.response="Как она прошла?"
+            ctx.suggests=['Прекрасно','Неплохо','Не очень']
+            ctx.intent = 'COFFEE_SURVEY2_YES'
+        elif ctx.text_normalized=='нет':
+            ctx.response="Что помешало встрече?"
+            ctx.suggests=['Слишком занят','Болезнь','В отъезде','Не совпал график',
+            'Договорились на потом','Другое']
+            ctx.intent = 'COFFEE_SURVEY2_NO'
+        else:
+            ctx.response="Пожалуйста, скажите 'да' или 'нет'"
+            ctx.intent='COFFEE_SURVEY'
+    
+    elif ctx.last_intent=='COFFEE_SURVEY2_NO':
+            ctx.intent = 'COFFEE_SURVEY3_NO'
+            ctx.response="Спасибо за информацию о причинах!"
+
+    elif ctx.last_intent=='COFFEE_SURVEY2_YES':
+        ctx.intent = 'COFFEE_SURVEY3_YES'
+        if ctx.text=='Прекрасно':
+            ctx.response="Я очень рад!"
+        elif ctx.text=='Не очень':
+            ctx.response="Что ж, в другой раз повезёт!"
+        else:
+            ctx.response="Спасибо за информацию о встрече!"
+    
+   
+    return ctx
+    

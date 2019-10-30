@@ -11,7 +11,7 @@ from scenarios.conversation import try_conversation, fallback
 from scenarios.dog_mode import doggy_style
 from scenarios.push import try_queued_messages
 from scenarios.membership import try_membership_management
-from scenarios.coffee import try_coffee_management
+from scenarios.coffee import try_coffee_management,try_advanced_coffee
 from scenarios.suggests import make_standard_suggests
 
 PROCESSED_MESSAGES = set()
@@ -61,6 +61,7 @@ def respond(message, database: Database, sender: BaseSender, bot=None):
         try_event_usage,
         try_peoplebook_management,
         try_coffee_management,
+        try_advanced_coffee,
         try_membership_management,
         try_event_edition,
         try_conversation,
